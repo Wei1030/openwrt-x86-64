@@ -18,4 +18,6 @@
 echo 'src-git passwall https://github.com/xiaorouji/openwrt-passwall' >>feeds.conf.default
 
 ./scripts/feeds update -a
-./scripts/feeds install -a
+./scripts/feeds install libpam
+./scripts/feeds install liblzma
+./scripts/feeds install libnetsnmp
