@@ -14,8 +14,8 @@
 #sed -i 's/^#\(.*helloworld\)/\1/' feeds.conf.default
 
 echo copy upx...
-\cp -f /usr/bin/upx /workdir/openwrt/staging_dir/host/bin/upx
-\cp -f /usr/bin/upx-ucl /workdir/openwrt/staging_dir/host/bin/upx-ucl
+\cp -f /usr/bin/upx openwrt/staging_dir/host/bin/upx
+\cp -f /usr/bin/upx-ucl openwrt/staging_dir/host/bin/upx-ucl
 
 # Add a feed source
 #echo 'src-git helloworld https://github.com/fw876/helloworld' >>feeds.conf.default
