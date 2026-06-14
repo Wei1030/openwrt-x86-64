@@ -93,7 +93,7 @@ jobs:
       run: |
         cd openwrt
         mkdir myconfig
-        cp .config myconfig/clean_config
+        cp .config myconfig/basic_config
         cd myconfig
         echo "FIRMWARE=$PWD" >> $GITHUB_ENV
         echo "status=success" >> $GITHUB_OUTPUT
@@ -102,5 +102,5 @@ jobs:
       uses: actions/upload-artifact@main
       if: steps.organize.outputs.status == 'success' && !cancelled()
       with:
-        name: clean_config${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
+        name: basic_config${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
         path: ${{ env.FIRMWARE }}
