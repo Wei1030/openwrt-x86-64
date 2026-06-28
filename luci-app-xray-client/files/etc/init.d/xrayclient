@@ -16,6 +16,14 @@ start_service() {
     {
         echo "===== $(date '+%Y-%m-%d %H:%M:%S') 开始启动 Xray client ====="
 
+        # 从 xray-core 的 UCI 配置读取 datadir (geoip/geosite 所在目录)
+        ASSET_DIR=$(uci -q get xray.config.datadir)
+        [ -z "$ASSET_DIR" ] && ASSET_DIR="/usr/share/xray"
+
+        # 在本目录下创建符号链接供前端读取 (前端 ACL 无法访问动态路径)
+        ln -sf "$ASSET_DIR/geoip.dat" "$XRAY_DIR/geoip.dat"
+        ln -sf "$ASSET_DIR/geosite.dat" "$XRAY_DIR/geosite.dat"
+
         # 同步定时更新任务 (IP类 和 域名类 分别调度)
         mkdir -p /etc/crontabs
         touch /etc/crontabs/root
@@ -70,6 +78,17 @@ start_service() {
         /etc/init.d/cron enable 2>/dev/null
         /etc/init.d/cron restart 2>/dev/null
 
+        # 检查用户是否已初始化，未初始化则先添加用户
+        USR_SETUP=$(uci -q get ${UCI_CONF}.main.usr_setup)
+        if [ "$USR_SETUP" != "1" ]; then
+            echo "首次启动: 正在添加 Xray 运行用户..."
+            sh "$XRAY_DIR/add_usr.sh"
+            if [ $? -ne 0 ]; then
+                echo "错误: add_usr.sh 执行失败，无法启动服务。"
+                return 1
+            fi
+        fi
+
         # 检查是否配置了活动节点
         ACTIVE_NODE=$(uci -q get ${UCI_CONF}.main.active_node)
         if [ -z "$ACTIVE_NODE" ]; then
@@ -78,20 +97,13 @@ start_service() {
             return 0
         fi
 
-        XRAY_BIN="$XRAY_DIR/xray"
+        XRAY_BIN="/usr/bin/xray"
         if [ ! -f "$XRAY_BIN" ]; then
             echo "错误: 找不到 Xray 二进制文件 $XRAY_BIN"
             return 1
         fi
 
-        # 1. 安全校验：检查内部初始化状态锁
-        USR_SETUP=$(uci -q get ${UCI_CONF}.main.usr_setup)
-        if [ "$USR_SETUP" != "1" ]; then
-            echo "xrayclient: 用户尚未添加"
-            return 1
-        fi
-
-        # 2. 从 UCI 读取运行用户配置
+        # 从 UCI 读取运行用户配置
         XRAY_USR=$(uci -q get ${UCI_CONF}.main.xray_usr_name)
         XRAY_GID=$(uci -q get ${UCI_CONF}.main.xray_usr_gid)
         
@@ -116,7 +128,7 @@ start_service() {
         procd_set_param command "$XRAY_BIN" -confdir "$CONF_DIR"
         procd_set_param user "$XRAY_USR"
         procd_set_param group "$XRAY_GID"
-        procd_set_param env XRAY_LOCATION_ASSET="/usr/share/xrayclient"
+        procd_set_param env XRAY_LOCATION_ASSET="$ASSET_DIR"
         procd_set_param limits nofile=1000000 nproc=500
         procd_set_param respawn
         procd_set_param stdout 1

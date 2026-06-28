@@ -13,7 +13,7 @@ var LOG_FILE = '/var/log/xrayclient.log';
 var DATA_DIR = '/usr/share/xrayclient';
 var UPDATE_SCRIPT = '/usr/share/xrayclient/update_data.sh';
 
-/* 数据文件路径 */
+/* 数据文件路径 (geoip/geosite 为符号链接，由 init.d 指向 xray 的 asset 目录) */
 var DATA_FILES = {
     cn_v4: DATA_DIR + '/cn_v4.list',
     cn_v6: DATA_DIR + '/cn_v6.list',
@@ -50,7 +50,7 @@ return view.extend({
             }).catch(function () { return false; }),
             uci.load(UCI_CONF),
             fs.read(LOG_FILE).catch(function () { return ''; }),
-            /* 获取 3 个数据文件的修改时间 */
+            /* 获取 4 个数据文件的修改时间 */
             Promise.all(Object.keys(DATA_FILES).map(function (key) {
                 return fs.stat(DATA_FILES[key]).then(function (st) {
                     return { key: key, mtime: st.mtime };

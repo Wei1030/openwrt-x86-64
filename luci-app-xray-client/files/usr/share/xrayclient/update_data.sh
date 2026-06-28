@@ -7,6 +7,10 @@ UCI_CONF="xrayclient"
 LOG_FILE="/var/log/xrayclient.log"
 DATA_DIR="/usr/share/xrayclient"
 
+# geoip/geosite 的存放目录 (从 xray-core 的 UCI 配置读取)
+ASSET_DIR=$(uci -q get xray.config.datadir)
+[ -z "$ASSET_DIR" ] && ASSET_DIR="/usr/share/xray"
+
 # 更新模式: ip (cn_v4+cn_v6+geoip), dat (geosite), all 或无参数 (全部)
 UPDATE_MODE="${1:-all}"
 
@@ -79,7 +83,7 @@ update_dat_with_checksum() {
     DAT_NAME="$1"       # geoip.dat / geosite.dat
     DAT_URL="$2"        # dat 下载 URL
     SHA_URL="$3"        # 校验文件 URL
-    SHA_LOCAL="$DATA_DIR/${DAT_NAME}.sha256sum"
+    SHA_LOCAL="$ASSET_DIR/${DAT_NAME}.sha256sum"
 
     # 下载新的校验文件
     TMP_SHA=$(mktemp)
@@ -111,8 +115,8 @@ update_dat_with_checksum() {
     # 下载 dat 文件
     TMP_DAT=$(mktemp)
     if dl "$DAT_URL" "$TMP_DAT" 120; then
-        mv "$TMP_DAT" "$DATA_DIR/${DAT_NAME}"
-        log "${DAT_NAME} 更新成功 ($(ls -lh "$DATA_DIR/${DAT_NAME}" | awk '{print $5}'))"
+        mv "$TMP_DAT" "$ASSET_DIR/${DAT_NAME}"
+        log "${DAT_NAME} 更新成功 ($(ls -lh "$ASSET_DIR/${DAT_NAME}" | awk '{print $5}'))"
         # 保存校验文件
         if [ -n "$TMP_SHA" ]; then
             mv "$TMP_SHA" "$SHA_LOCAL"
