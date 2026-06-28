@@ -86,10 +86,8 @@ define Package/$(PKG_NAME)/postinst
 # 重载 rpcd 使 ACL 权限生效
 /etc/init.d/rpcd reload 2>/dev/null
 
-# 执行初始化安装脚本
-if [ -f /usr/share/xrayclient/install.sh ]; then
-    sh /usr/share/xrayclient/install.sh
-fi
+# 确保开机自启
+/etc/init.d/xrayclient enable 2>/dev/null
 exit 0
 endef
 

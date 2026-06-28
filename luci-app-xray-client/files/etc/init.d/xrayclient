@@ -11,6 +11,9 @@ UCI_CONF="xrayclient"
 start_service() {
     # 确保日志目录存在
     mkdir -p /var/log 2>/dev/null
+
+    # 确保开机自启
+    /etc/init.d/xrayclient enable 2>/dev/null
     
     # 使用 { ... } 将整个启动过程打包，统一输出到日志文件
     {
@@ -115,6 +118,9 @@ start_service() {
         # 防御性清理旧规则
         [ -f "$XRAY_DIR/remove_nft.sh" ] && sh "$XRAY_DIR/remove_nft.sh" > /dev/null 2>&1
         [ -f "$XRAY_DIR/remove_route.sh" ] && sh "$XRAY_DIR/remove_route.sh" > /dev/null 2>&1
+
+        # 检测国内域名 DNS (从系统 resolvfile 自动获取)
+        sh "$XRAY_DIR/find_dns.sh"
 
         # 生成 Xray 配置
         sh "$XRAY_DIR/gen_xray_config.sh"

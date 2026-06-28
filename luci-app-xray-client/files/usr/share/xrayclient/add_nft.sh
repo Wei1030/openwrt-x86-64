@@ -57,12 +57,6 @@ if [ -z "$XRAY_USR_GID" ]; then
     exit 1
 fi
 
-DNS_GID=$(uci -q get ${UCI_CONF}.main.dns_gid)
-if [ -z "$DNS_GID" ]; then
-    echo "错误: 未在 UCI (${UCI_CONF}.main.dns_gid) 中找到 GID，请确保已执行 add_dns.sh"
-    exit 1
-fi
-
 XRAY_TPROXY_PORT=$(uci -q get ${UCI_CONF}.main.tproxy_port)
 if [ -z "$XRAY_TPROXY_PORT" ]; then
     echo "错误: 未在 UCI (${UCI_CONF}.main.tproxy_port) 中找到 tproxy 端口，请确保已执行 gen_01_inbounds.sh"
@@ -245,7 +239,7 @@ table inet $NFT_TABLE_NAME {
         meta l4proto != { tcp, udp } accept
 
         # 放行本机特定进程发出的请求流量
-        meta skgid { $DNS_GID, $XRAY_USR_GID } accept
+        meta skgid $XRAY_USR_GID accept
         jump handle_mark
     }
 }

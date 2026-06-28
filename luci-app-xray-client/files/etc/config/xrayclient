@@ -3,9 +3,12 @@ config main 'main'
         option fakeip_cidr '198.18.0.0/15'
         # 使用 FakeIP 的域名 (默认已包含 geosite:google)
         #list fakeip_domains 'domain:example.com'
-        option local_dns_server '127.0.0.1'
-        option local_dns_port '22653'
+        option local_dns_server '223.5.5.5'
+        option local_dns_port '53'
         #option active_node 'node1'
+
+        # 自定义国内域名 DNS (0=自动检测系统上游DNS, 1=手动指定)
+        option custom_local_dns '0'
 
         # 尝试使用国内DNS解析的额外域名 (默认已包含 geosite:cn, geosite:apple, geosite:microsoft)
         #list cn_dns_domains 'domain:example.com'
@@ -17,12 +20,6 @@ config main 'main'
         # 内部状态锁：标记 add_usr.sh 是否已成功执行 (1=成功，0/空=未初始化)
         # 此字段由程序自动维护，请勿手动修改
         option usr_setup '0'
-
-        # Xray 专用 DNS 实例配置
-        option dns_name 'DNSForXrayClient'
-        option dns_port '22653'
-        # dns_gid 由 add_dns.sh 运行时自动检测并填入，不用手动写
-        option dns_gid '453'
 
         # 路由与防火墙标记配置
         option fwmark '22610'

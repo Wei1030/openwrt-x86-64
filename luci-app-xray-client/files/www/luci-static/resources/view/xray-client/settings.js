@@ -102,10 +102,21 @@ return view.extend({
 
         /* --- 国内域名 DNS 摘要 --- */
         var oLocalDnsSum = sOverview.option(form.DummyValue, '_local_dns_summary', _('国内域名 DNS'));
+        oLocalDnsSum.rawhtml = true;
         oLocalDnsSum.cfgvalue = function () {
-            var srv = uci.get(UCI_CONF, 'main', 'local_dns_server') || '127.0.0.1';
-            var port = uci.get(UCI_CONF, 'main', 'local_dns_port') || '22653';
-            return srv + ':' + port;
+            var srv = uci.get(UCI_CONF, 'main', 'local_dns_server') || '223.5.5.5';
+            var port = uci.get(UCI_CONF, 'main', 'local_dns_port') || '53';
+            var html = '<span style="font-weight:bold">' + srv + ':' + port + '</span>';
+            /* 检测是否为内网地址 */
+            var isLan = false;
+            if (/^(127\.|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)/.test(srv) ||
+                srv === 'localhost' || srv === '::1') {
+                isLan = true;
+            }
+            if (isLan) {
+                html += '<div style="margin-top:4px;font-size:12px;color:#b35900;">\u26A0 DNS 在本地局域网，请确认其查询流量不经代理，否则将导致循环。</div>';
+            }
+            return html;
         };
 
         /* --- FakeIP 摘要 --- */
@@ -290,28 +301,33 @@ return view.extend({
         /* ====== 国内域名DNS ====== */
         var sDns = m.section(form.NamedSection, 'main', _('国内域名DNS'));
 
+        /* --- 自定义国内域名 DNS --- */
+        var oCustomDns = sDns.option(form.Flag, 'custom_local_dns', _('自定义国内域名 DNS'));
+        oCustomDns.description = _('勾选后手动指定国内域名 DNS 地址；不勾选则每次启动时自动从系统上游 DNS 检测。');
+
         /* --- 国内域名 DNS --- */
         var oLds = sDns.option(form.Value, 'local_dns_server', _('国内域名 DNS 地址'));
         oLds.datatype = 'host';
         oLds.placeholder = _('用于解析国内域名');
+        oLds.depends('custom_local_dns', '1');
 
         var oLdp = sDns.option(form.Value, 'local_dns_port', _('国内域名 DNS 端口'));
         oLdp.datatype = 'port';
         oLdp.placeholder = '53';
+        oLdp.depends('custom_local_dns', '1');
 
         /* 国内 DNS 警告 */
         var oWarn = sDns.option(form.DummyValue, '_local_dns_warn', _(' '));
+        oWarn.depends('custom_local_dns', '1');
         oWarn.renderWidget = function () {
             return E('div', {
                 style: 'padding:10px 14px;margin:6px 0;border:1px solid #ffb900;background:#fff8e5;border-radius:4px;font-size:13px;line-height:1.6;'
             }, [
                 E('strong', { style: 'color:#b35900' }, '\u26A0 ' + _('重要提示')),
                 E('br'),
-                _('用于解析国内域名的 DNS服务器其流量不可经由本代理转发，否则将导致 DNS 查询陷入无限循环。'),
+                _('用于解析国内域名的 DNS 服务器其流量不可经由本代理转发，否则将导致 DNS 查询陷入无限循环。'),
                 E('br'),
-                _('切勿将网关指向本代理软件所在路由器的 DNS 配置为本项。'),
-                E('br'),
-                _('如果系统默认使用了安装时自动创建的 dnsmasq 实例（监听端口 22653），该实例流量已被特别放行，可安全使用。')
+                _('切勿将网关指向本代理软件所在路由器的 DNS 配置为本项。')
             ]);
         };
 
@@ -577,10 +593,6 @@ return view.extend({
 
         var oUsrGid = sLog.option(form.Value, 'xray_usr_gid', _('Xray 运行用户 GID'));
         oUsrGid.description = _('Xray 进程运行用户的 GID，nftables 通过此 GID 排除 Xray 自身流量。');
-
-        var oDnsName = sLog.option(form.Value, 'dns_name', _('dnsmasq 实例名'));
-        var oDnsPort = sLog.option(form.Value, 'dns_port', _('dnsmasq 监听端口'));
-        oDnsPort.datatype = 'port';
 
         return m.render().then(function (node) {
             /* 绑定所有更新按钮 (概览页) */
