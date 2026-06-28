@@ -20,4 +20,4 @@
 #echo 'src-git helloworld https://github.com/Openwrt-Passwall/openwrt-passwall2' >>feeds.conf.default
 #echo 'src-git-full luci_app_xray https://github.com/yichya/luci-app-xray' >>feeds.conf.default
 
-cp -r luci-app-xray-client openwrt/package/
+cp -r ../luci-app-xray-client ./package/
