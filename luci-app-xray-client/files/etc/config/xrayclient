@@ -1,0 +1,87 @@
+config main 'main'
+        option tproxy_port '22610'
+        option fakeip_cidr '198.18.0.0/15'
+        # 使用 FakeIP 的域名 (默认已包含 geosite:google)
+        #list fakeip_domains 'domain:example.com'
+        option local_dns_server '127.0.0.1'
+        option local_dns_port '22653'
+        #option active_node 'node1'
+
+        # 尝试使用国内DNS解析的额外域名 (默认已包含 geosite:cn, geosite:apple, geosite:microsoft)
+        #list cn_dns_domains 'domain:example.com'
+
+        # Xray 运行用户配置
+        option xray_usr_name 'xrayclient_user'
+        option xray_usr_gid '22610'
+
+        # 内部状态锁：标记 add_usr.sh 是否已成功执行 (1=成功，0/空=未初始化)
+        # 此字段由程序自动维护，请勿手动修改
+        option usr_setup '0'
+
+        # Xray 专用 DNS 实例配置
+        option dns_name 'DNSForXrayClient'
+        option dns_port '22653'
+        # dns_gid 由 add_dns.sh 运行时自动检测并填入，不用手动写
+        option dns_gid '453'
+
+        # 路由与防火墙标记配置
+        option fwmark '22610'
+        option table_v4_id '82'
+        option table_v4_name 'xrayclient4'
+        option table_v6_id '88'
+        option table_v6_name 'xrayclient6'
+
+        # nftables 防火墙配置
+        option nft_table_name 'xrayclient_tproxy'
+        # 指定用于监控流量的入接口名称 (hook_prerouting 中 iifname 不在此列表则 return)
+        list nft_lan_iface 'lan'
+
+        # 广告屏蔽开关 (1为开启，0或不写为关闭)
+        option block_ad '1'
+        # 屏蔽域名列表
+        list block_domain 'geosite:category-ads-all'
+        #list block_domain 'domain:example.com'
+
+        # 白名单/黑名单域名 (每行一个，支持多行)
+        #list whitelist_domain 'domain:xray.com'
+        #list blacklist_domain 'domain:youtube.com'
+
+        # 黑名单 IP (每行一个)
+        #list blacklist_ip '192.26.2.1/24'
+
+        # nftables 白名单 IP (支持多行添加)
+        #list nft_whitelist_v4 '10.0.0.0/24'
+        #list nft_whitelist_v6 '2001:db8::/32'
+
+        # 数据文件更新配置
+        # IP 类数据更新 (cn_v4.list + cn_v6.list + geoip.dat)
+        option ip_update_interval 'weekly'
+        option ip_update_hour '4'
+        option ip_update_dow '5'
+        option cn_ip_url 'https://gaoyifan.github.io/china-operator-ip/china.txt'
+        option cn_v6_url 'https://gaoyifan.github.io/china-operator-ip/china6.txt'
+        option geoip_url 'https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat'
+        option geoip_sha256_url 'https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat.sha256sum'
+
+        # 域名类数据更新 (geosite.dat)
+        option dat_update_interval 'every3d'
+        option dat_update_hour '4'
+        option dat_update_dow '1'
+        option geosite_url 'https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat'
+        option geosite_sha256_url 'https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat.sha256sum'
+
+config remote_dns 'dns1'
+        option address '1.1.1.1'
+        option port '53'
+
+config remote_dns 'dns2'
+        option address '8.8.8.8'
+        option port '53'
+
+config remote_dns 'dns3'
+        option address '8.8.4.4'
+        option port '53'
+
+# 在 LuCI 页面的「代理节点」Tab 中添加节点
+# 支持的协议类型: vless (后续将支持更多协议)
+

@@ -14,8 +14,11 @@
 #sed -i 's/^#\(.*helloworld\)/\1/' feeds.conf.default
 
 # Add a feed source
-echo 'src-git helloworld https://github.com/fw876/helloworld' >>feeds.conf.default
+#echo 'src-git helloworld https://github.com/fw876/helloworld' >>feeds.conf.default
 #echo 'src-git passwall_packages https://github.com/Openwrt-Passwall/openwrt-passwall-packages.git;main' >>feeds.conf.default
 #echo 'src-git passwall_luci https://github.com/Openwrt-Passwall/openwrt-passwall.git;main' >>feeds.conf.default
 #echo 'src-git helloworld https://github.com/Openwrt-Passwall/openwrt-passwall2' >>feeds.conf.default
-echo 'src-git-full luci_app_xray https://github.com/yichya/luci-app-xray' >>feeds.conf.default
+#echo 'src-git-full luci_app_xray https://github.com/yichya/luci-app-xray' >>feeds.conf.default
+
+SCRIPT_DIR=$(cd "$(dirname "$0")"; pwd)
+cp -r $SCRIPT_DIR/luci-app-xray-client $SCRIPT_DIR/openwrt/package/

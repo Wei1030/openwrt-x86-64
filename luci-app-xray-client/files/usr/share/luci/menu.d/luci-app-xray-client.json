@@ -1,0 +1,13 @@
+{
+    "admin/services/xray-client": {
+        "title": "Xray Client",
+        "order": 80,
+        "action": {
+            "type": "view",
+            "path": "xray-client/settings"
+        },
+        "depends": {
+            "fs": [ "/etc/config/xrayclient" ]
+        }
+    }
+}
