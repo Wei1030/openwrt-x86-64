@@ -1,0 +1,29 @@
+{
+        "xrayclient": {
+                "description": "Xray Client management ACL",
+                "read": {
+                        "ubus": {
+                                "service": [ "list" ]
+                        },
+                        "file": {
+                                "/var/log/xrayclient.log": [ "read" ],
+                                "/usr/share/xrayclient/cn_v4.list": [ "read" ],
+                                "/usr/share/xrayclient/cn_v6.list": [ "read" ],
+                                "/usr/share/xrayclient/geoip.dat": [ "read" ],
+                                "/usr/share/xrayclient/geosite.dat": [ "read" ]
+                        },
+                        "uci": [ "xrayclient" ]
+                },
+                "write": {
+                        "ubus": {
+                                "file": [ "exec" ]
+                        },
+                        "file": {
+                                "/etc/init.d/xrayclient": [ "exec" ],
+                                "/usr/share/xrayclient/update_data.sh": [ "exec" ],
+                                "/var/log/xrayclient.log": [ "write" ]
+                        },
+                        "uci": [ "xrayclient" ]
+                }
+        }
+}

@@ -1,0 +1,104 @@
+#
+# https://github.com/P3TERX/Actions-OpenWrt
+#
+# File: .github/workflows/openwrt-bulder.yml
+# Description: Build OpenWrt using GitHub Actions
+#
+# Copyright (c) 2019-2024 P3TERX <https://p3terx.com>
+#
+# This is free software, licensed under the MIT License.
+# See /LICENSE for more information.
+#
+
+name: OpenWrt Builder
+
+on:
+  repository_dispatch:
+  workflow_dispatch:
+    inputs:
+      ssh:
+        description: 'SSH connection to Actions'
+        required: false
+        default: 'false'
+
+env:
+  REPO_URL: https://github.com/openwrt/openwrt
+  REPO_BRANCH: openwrt-25.12
+  FEEDS_CONF: feeds.conf.default
+  CONFIG_FILE: .config
+  DIY_P1_SH: diy-part1.sh
+  DIY_P2_SH: diy-part2.sh
+  UPLOAD_BIN_DIR: false
+  UPLOAD_FIRMWARE: true
+  UPLOAD_RELEASE: true
+  TZ: Asia/Shanghai
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@main
+
+    - name: Prepare OpenWrt SDK
+      run: |
+        wget -q https://downloads.openwrt.org/releases/25.12.4/targets/x86/64/openwrt-sdk-25.12.4-x86-64_gcc-14.3.0_musl.Linux-x86_64.tar.zst
+        tar -xf openwrt-sdk-*.tar.zst
+        SDK_DIR=$(find . -maxdepth 1 -type d -name "openwrt-sdk-*" | head -n 1)
+        if [ -z "$SDK_DIR" ]; then
+            echo "错误：未找到 OpenWrt SDK 目录"
+            exit 1
+        fi
+        if [ -d "openwrt-sdk" ]; then
+          rm -rf openwrt-sdk
+        fi
+        mv "$SDK_DIR" openwrt-sdk
+        ls -la openwrt-sdk/
+
+    - name: Copy package to SDK
+      run: |
+        mkdir -p openwrt-sdk/package
+        cp -r luci-app-xray-client openwrt-sdk/package/
+
+    - name: Install feeds and Build
+      run: |
+        cd openwrt-sdk
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
+        make defconfig
+        make package/luci-app-xray-client/compile -j$(nproc)
+        
+    - name: Debug directory structure
+      run: |
+        echo "当前工作目录: $(pwd)"
+        echo "目录内容:"
+        ls -la  
+        echo "SDK目录内容:"
+        ls -la openwrt-sdk/
+        echo "bin目录内容:"
+        find openwrt-sdk/bin -type f -name "*.apk" 2>/dev/null || echo "未找到apk文件"
+    
+    - name: Find and copy apk file
+      run: |
+        # 查找生成的apk文件
+        APK_FILE=$(find openwrt-sdk/bin -name "luci-app-xray-client*.apk" | head -n 1)
+        
+        if [ -z "$APK_FILE" ]; then
+          echo "错误：未找到生成的APK文件"
+          exit 1
+        fi
+        
+        echo "找到APK文件: $APK_FILE"
+        
+        # 复制到工作目录根目录
+        cp "$APK_FILE" ./luci-app-xray-client.apk
+        
+        # 显示文件信息
+        ls -la ./luci-app-xray-client.apk
+        
+    - name: Upload apk artifact
+      uses: actions/upload-artifact@main
+      with:
+        name: luci-app-xray-client-apk
+        path: ./luci-app-xray-client.apk
