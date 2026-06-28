@@ -7,6 +7,7 @@ XRAY_DIR="/usr/share/xrayclient"
 CONF_DIR="/etc/xrayclient/conf.d"
 LOG_FILE="/var/log/xrayclient.log"
 UCI_CONF="xrayclient"
+ASSET_DIR="/usr/share/v2ray"
 
 start_service() {
     # 确保日志目录存在
@@ -18,14 +19,6 @@ start_service() {
     # 使用 { ... } 将整个启动过程打包，统一输出到日志文件
     {
         echo "===== $(date '+%Y-%m-%d %H:%M:%S') 开始启动 Xray client ====="
-
-        # 从 xray-core 的 UCI 配置读取 datadir (geoip/geosite 所在目录)
-        ASSET_DIR=$(uci -q get xray.config.datadir)
-        [ -z "$ASSET_DIR" ] && ASSET_DIR="/usr/share/xray"
-
-        # 在本目录下创建符号链接供前端读取 (前端 ACL 无法访问动态路径)
-        ln -sf "$ASSET_DIR/geoip.dat" "$XRAY_DIR/geoip.dat"
-        ln -sf "$ASSET_DIR/geosite.dat" "$XRAY_DIR/geosite.dat"
 
         # 同步定时更新任务 (IP类 和 域名类 分别调度)
         mkdir -p /etc/crontabs

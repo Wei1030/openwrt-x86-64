@@ -11,14 +11,15 @@ var UCI_CONF = 'xrayclient';
 var INIT_SCRIPT = '/etc/init.d/xrayclient';
 var LOG_FILE = '/var/log/xrayclient.log';
 var DATA_DIR = '/usr/share/xrayclient';
+var ASSET_DIR = '/usr/share/v2ray';
 var UPDATE_SCRIPT = '/usr/share/xrayclient/update_data.sh';
 
-/* 数据文件路径 (geoip/geosite 为符号链接，由 init.d 指向 xray 的 asset 目录) */
+/* 数据文件路径 (geoip/geosite 由 v2ray-geoip/v2ray-geosite 包提供) */
 var DATA_FILES = {
     cn_v4: DATA_DIR + '/cn_v4.list',
     cn_v6: DATA_DIR + '/cn_v6.list',
-    geoip: DATA_DIR + '/geoip.dat',
-    geosite: DATA_DIR + '/geosite.dat'
+    geoip: ASSET_DIR + '/geoip.dat',
+    geosite: ASSET_DIR + '/geosite.dat'
 };
 
 /* HTML 转义，防止日志内容中的特殊字符破坏页面 */

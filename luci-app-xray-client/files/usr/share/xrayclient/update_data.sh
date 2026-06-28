@@ -7,9 +7,8 @@ UCI_CONF="xrayclient"
 LOG_FILE="/var/log/xrayclient.log"
 DATA_DIR="/usr/share/xrayclient"
 
-# geoip/geosite 的存放目录 (从 xray-core 的 UCI 配置读取)
-ASSET_DIR=$(uci -q get xray.config.datadir)
-[ -z "$ASSET_DIR" ] && ASSET_DIR="/usr/share/xray"
+# geoip/geosite 的存放目录 (由 v2ray-geoip / v2ray-geosite 包提供)
+ASSET_DIR="/usr/share/v2ray"
 
 # 更新模式: ip (cn_v4+cn_v6+geoip), dat (geosite), all 或无参数 (全部)
 UPDATE_MODE="${1:-all}"

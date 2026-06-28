@@ -9,8 +9,8 @@
                                 "/var/log/xrayclient.log": [ "read" ],
                                 "/usr/share/xrayclient/cn_v4.list": [ "read" ],
                                 "/usr/share/xrayclient/cn_v6.list": [ "read" ],
-                                "/usr/share/xrayclient/geoip.dat": [ "read" ],
-                                "/usr/share/xrayclient/geosite.dat": [ "read" ]
+                                "/usr/share/v2ray/geoip.dat": [ "read" ],
+                                "/usr/share/v2ray/geosite.dat": [ "read" ]
                         },
                         "uci": [ "xrayclient" ]
                 },
