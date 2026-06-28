@@ -20,4 +20,5 @@
 #echo 'src-git helloworld https://github.com/Openwrt-Passwall/openwrt-passwall2' >>feeds.conf.default
 #echo 'src-git-full luci_app_xray https://github.com/yichya/luci-app-xray' >>feeds.conf.default
 
-cp -r ../luci-app-xray-client ./package/
+SCRIPT_DIR=$(cd "$(dirname "$0")"; pwd)
+cp -r $SCRIPT_DIR/luci-app-xray-client $SCRIPT_DIR/openwrt/package/
