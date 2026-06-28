@@ -22,7 +22,7 @@ define Package/$(PKG_NAME)
   SUBMENU:=3. Applications
   TITLE:=Xray Client with LuCI
   DEPENDS:=+xray-core +ip-full +ucode +uci +luci-base
-  PKGARCH:=all
+  PKGARCH:=x86_64
 endef
 
 define Package/$(PKG_NAME)/description
