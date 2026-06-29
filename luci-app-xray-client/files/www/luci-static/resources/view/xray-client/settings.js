@@ -609,24 +609,46 @@ return view.extend({
                     var oldTimeout = L.env.rpctimeout;
                     L.env.rpctimeout = 120;
 
-                    fs.exec(UPDATE_SCRIPT).then(function (res) {
-                        L.env.rpctimeout = oldTimeout;
-                        ui.hideModal();
-                        if (res.code === 0) {
-                            /* 读取日志判断是否有实际更新 */
-                            fs.read(LOG_FILE).catch(function () { return ''; }).then(function (logContent) {
-                                var lastLines = logContent.slice(-800);
-                                if (lastLines.indexOf('更新成功') < 0) {
-                                    ui.addNotification(null, E('p', _('数据已最新，无需更新！')));
-                                } else {
+                    /* 记录更新前所有数据文件的 mtime */
+                    Promise.all(Object.keys(DATA_FILES).map(function (key) {
+                        return fs.stat(DATA_FILES[key]).then(function (st) {
+                            return { key: key, mtime: st.mtime };
+                        }).catch(function () {
+                            return { key: key, mtime: null };
+                        });
+                    })).then(function (beforeStats) {
+                        return fs.exec(UPDATE_SCRIPT).then(function (res) {
+                            L.env.rpctimeout = oldTimeout;
+                            if (res.code !== 0) {
+                                ui.hideModal();
+                                ui.addNotification(null, E('p', _('数据更新失败 (exit code: %d)').format(res.code)));
+                                window.setTimeout(function () { window.location.reload(); }, 2000);
+                                return;
+                            }
+                            /* 更新后再次获取 mtime，对比判断是否有变化 */
+                            Promise.all(Object.keys(DATA_FILES).map(function (key) {
+                                return fs.stat(DATA_FILES[key]).then(function (st) {
+                                    return { key: key, mtime: st.mtime };
+                                }).catch(function () {
+                                    return { key: key, mtime: null };
+                                });
+                            })).then(function (afterStats) {
+                                ui.hideModal();
+                                var changed = false;
+                                for (var i = 0; i < afterStats.length; i++) {
+                                    if (afterStats[i].mtime !== beforeStats[i].mtime) {
+                                        changed = true;
+                                        break;
+                                    }
+                                }
+                                if (changed) {
                                     ui.addNotification(null, E('p', _('数据更新完成，请查看日志了解详情。')));
+                                } else {
+                                    ui.addNotification(null, E('p', _('数据已最新，无需更新！')));
                                 }
                                 window.setTimeout(function () { window.location.reload(); }, 2000);
                             });
-                        } else {
-                            ui.addNotification(null, E('p', _('数据更新失败 (exit code: %d)').format(res.code)));
-                            window.setTimeout(function () { window.location.reload(); }, 2000);
-                        }
+                        });
                     }).catch(function (err) {
                         L.env.rpctimeout = oldTimeout;
                         ui.hideModal();

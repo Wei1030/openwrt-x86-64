@@ -77,54 +77,45 @@ log "开始更新数据文件 (模式: ${UPDATE_MODE})..."
 
 # ====================
 # 通用函数: 带 sha256 校验的 dat 文件更新
-# 校验文件保存在 DATA_DIR (不写入 v2ray 包目录)
+# 下载远程 sha256sum → 计算本地 dat 的 sha256 → 比对
+# 不在本地保存任何校验文件
 # ====================
 update_dat_with_checksum() {
     DAT_NAME="$1"       # geoip.dat / geosite.dat
     DAT_URL="$2"        # dat 下载 URL
     SHA_URL="$3"        # 校验文件 URL
-    SHA_LOCAL="$DATA_DIR/${DAT_NAME}.sha256sum"
+    DAT_LOCAL="$ASSET_DIR/${DAT_NAME}"
 
-    # 下载新的校验文件
+    # 下载远程校验文件
     TMP_SHA=$(mktemp)
-    if [ -n "$SHA_URL" ]; then
-        if ! dl "$SHA_URL" "$TMP_SHA" 30; then
-            log "${DAT_NAME} 校验文件下载失败，直接更新 dat 文件"
-            rm -f "$TMP_SHA"
-            TMP_SHA=""
-        fi
+    REMOTE_SHA=""
+    if [ -n "$SHA_URL" ] && dl "$SHA_URL" "$TMP_SHA" 30; then
+        # sha256sum 文件格式: "hash  filename" 或纯 hash
+        REMOTE_SHA=$(awk '{print $1}' "$TMP_SHA" 2>/dev/null)
     else
-        rm -f "$TMP_SHA"
-        TMP_SHA=""
+        log "${DAT_NAME} 校验文件下载失败，直接更新 dat 文件"
     fi
+    rm -f "$TMP_SHA"
 
-    # 如果有校验文件，比较内容
-    if [ -n "$TMP_SHA" ]; then
-        NEW_SHA_CONTENT=$(cat "$TMP_SHA")
-        if [ -f "$SHA_LOCAL" ]; then
-            OLD_SHA_CONTENT=$(cat "$SHA_LOCAL")
-            if [ "$NEW_SHA_CONTENT" = "$OLD_SHA_CONTENT" ]; then
-                log "${DAT_NAME} 校验文件一致，数据已是最新，跳过更新"
-                rm -f "$TMP_SHA"
-                return 0
-            fi
+    # 比对本地 dat 的 sha256 与远程校验值
+    if [ -n "$REMOTE_SHA" ] && [ -f "$DAT_LOCAL" ]; then
+        LOCAL_SHA=$(sha256sum "$DAT_LOCAL" 2>/dev/null | awk '{print $1}')
+        if [ "$LOCAL_SHA" = "$REMOTE_SHA" ]; then
+            log "${DAT_NAME} 校验一致，数据已是最新，跳过更新"
+            return 0
         fi
-        log "${DAT_NAME} 校验文件不一致 (或本地无校验文件)，开始更新 dat..."
+        log "${DAT_NAME} 校验不一致，开始更新 dat..."
     fi
 
     # 下载 dat 文件
     TMP_DAT=$(mktemp)
     if dl "$DAT_URL" "$TMP_DAT" 120; then
-        mv "$TMP_DAT" "$ASSET_DIR/${DAT_NAME}"
-        log "${DAT_NAME} 更新成功 ($(ls -lh "$ASSET_DIR/${DAT_NAME}" | awk '{print $5}'))"
-        # 保存校验文件到 DATA_DIR
-        if [ -n "$TMP_SHA" ]; then
-            mv "$TMP_SHA" "$SHA_LOCAL"
-        fi
+        mv "$TMP_DAT" "$DAT_LOCAL"
+        log "${DAT_NAME} 更新成功 ($(ls -lh "$DAT_LOCAL" | awk '{print $5}'))"
         UPDATED=1
     else
         log "${DAT_NAME} 下载失败"
-        rm -f "$TMP_DAT" "$TMP_SHA"
+        rm -f "$TMP_DAT"
     fi
 }
 
