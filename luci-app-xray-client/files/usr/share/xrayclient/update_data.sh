@@ -7,6 +7,9 @@ UCI_CONF="xrayclient"
 LOG_FILE="/var/log/xrayclient.log"
 DATA_DIR="/usr/share/xrayclient"
 
+# geoip/geosite 的存放目录 (由 v2ray-geoip / v2ray-geosite 包提供)
+ASSET_DIR="/usr/share/v2ray"
+
 # 更新模式: ip (cn_v4+cn_v6+geoip), dat (geosite), all 或无参数 (全部)
 UPDATE_MODE="${1:-all}"
 
@@ -14,6 +17,39 @@ mkdir -p /var/log 2>/dev/null
 
 log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') [update_data] $1" >> "$LOG_FILE"
+}
+
+# ====================
+# 下载函数: 优先 curl，没有则用 wget (uclient-fetch)
+# 用法: dl URL OUTPUT_FILE [TIMEOUT]
+#   TIMEOUT 默认 120 秒
+# 返回: 0 成功且文件非空，1 失败
+# ====================
+dl() {
+    _url="$1"
+    _out="$2"
+    _timeout="${3:-120}"
+
+    if command -v curl >/dev/null 2>&1; then
+        curl -sL --connect-timeout 10 --max-time "$_timeout" "$_url" -o "$_out" 2>/dev/null
+    else
+        wget -q -T "$_timeout" -O "$_out" "$_url" 2>/dev/null
+    fi
+
+    [ -s "$_out" ]
+}
+
+# 下载到 stdout (用于管道场景，如 | grep)
+# 用法: dl_stdout URL [TIMEOUT]
+dl_stdout() {
+    _url="$1"
+    _timeout="${2:-60}"
+
+    if command -v curl >/dev/null 2>&1; then
+        curl -sL --connect-timeout 10 --max-time "$_timeout" "$_url" 2>/dev/null
+    else
+        wget -q -T "$_timeout" -O - "$_url" 2>/dev/null
+    fi
 }
 
 # 从 UCI 读取 URL (带默认值)
@@ -41,80 +77,94 @@ log "开始更新数据文件 (模式: ${UPDATE_MODE})..."
 
 # ====================
 # 通用函数: 带 sha256 校验的 dat 文件更新
+# 下载远程 sha256sum → 计算本地 dat 的 sha256 → 比对
+# 不在本地保存任何校验文件
 # ====================
 update_dat_with_checksum() {
     DAT_NAME="$1"       # geoip.dat / geosite.dat
     DAT_URL="$2"        # dat 下载 URL
     SHA_URL="$3"        # 校验文件 URL
-    SHA_LOCAL="$DATA_DIR/${DAT_NAME}.sha256sum"
+    DAT_LOCAL="$ASSET_DIR/${DAT_NAME}"
 
-    # 下载新的校验文件
+    # 下载远程校验文件
     TMP_SHA=$(mktemp)
-    if [ -n "$SHA_URL" ]; then
-        if ! curl -sL --connect-timeout 10 --max-time 30 "$SHA_URL" -o "$TMP_SHA" 2>/dev/null || [ ! -s "$TMP_SHA" ]; then
-            log "${DAT_NAME} 校验文件下载失败，直接更新 dat 文件"
-            rm -f "$TMP_SHA"
-            TMP_SHA=""
-        fi
+    REMOTE_SHA=""
+    if [ -n "$SHA_URL" ] && dl "$SHA_URL" "$TMP_SHA" 30; then
+        # sha256sum 文件格式: "hash  filename" 或纯 hash
+        REMOTE_SHA=$(awk '{print $1}' "$TMP_SHA" 2>/dev/null)
     else
-        rm -f "$TMP_SHA"
-        TMP_SHA=""
+        log "${DAT_NAME} 校验文件下载失败，直接更新 dat 文件"
     fi
+    rm -f "$TMP_SHA"
 
-    # 如果有校验文件，比较内容
-    if [ -n "$TMP_SHA" ]; then
-        NEW_SHA_CONTENT=$(cat "$TMP_SHA")
-        if [ -f "$SHA_LOCAL" ]; then
-            OLD_SHA_CONTENT=$(cat "$SHA_LOCAL")
-            if [ "$NEW_SHA_CONTENT" = "$OLD_SHA_CONTENT" ]; then
-                log "${DAT_NAME} 校验文件一致，数据已是最新，跳过更新"
-                rm -f "$TMP_SHA"
-                return 0
-            fi
+    # 比对本地 dat 的 sha256 与远程校验值
+    if [ -n "$REMOTE_SHA" ] && [ -f "$DAT_LOCAL" ]; then
+        LOCAL_SHA=$(sha256sum "$DAT_LOCAL" 2>/dev/null | awk '{print $1}')
+        if [ "$LOCAL_SHA" = "$REMOTE_SHA" ]; then
+            log "${DAT_NAME} 校验一致，数据已是最新，跳过更新"
+            return 0
         fi
-        log "${DAT_NAME} 校验文件不一致 (或本地无校验文件)，开始更新 dat..."
+        log "${DAT_NAME} 校验不一致，开始更新 dat..."
     fi
 
     # 下载 dat 文件
     TMP_DAT=$(mktemp)
-    if curl -sL --connect-timeout 10 --max-time 120 "$DAT_URL" -o "$TMP_DAT" 2>/dev/null && [ -s "$TMP_DAT" ]; then
-        mv "$TMP_DAT" "$DATA_DIR/${DAT_NAME}"
-        log "${DAT_NAME} 更新成功 ($(ls -lh "$DATA_DIR/${DAT_NAME}" | awk '{print $5}'))"
-        # 保存校验文件
-        if [ -n "$TMP_SHA" ]; then
-            mv "$TMP_SHA" "$SHA_LOCAL"
-        fi
+    if dl "$DAT_URL" "$TMP_DAT" 120; then
+        mv "$TMP_DAT" "$DAT_LOCAL"
+        log "${DAT_NAME} 更新成功 ($(ls -lh "$DAT_LOCAL" | awk '{print $5}'))"
         UPDATED=1
     else
         log "${DAT_NAME} 下载失败"
-        rm -f "$TMP_DAT" "$TMP_SHA"
+        rm -f "$TMP_DAT"
     fi
+}
+
+# ====================
+# 通用函数: 计算文件 sha256 (BusyBox 自带，无需第三方工具)
+# ====================
+file_sha256() {
+    [ -f "$1" ] && sha256sum "$1" 2>/dev/null | awk '{print $1}'
 }
 
 # ====================
 # 1. 更新 IP 类数据 (cn_v4 + cn_v6 + geoip)
 # ====================
 if [ "$UPDATE_MODE" = "ip" ] || [ "$UPDATE_MODE" = "all" ]; then
+    # 1. 更新中国 IPv4 列表 (下载到临时文件，sha256 对比，无变化则跳过)
     TMP_CN=$(mktemp)
-    if curl -sL --connect-timeout 10 --max-time 60 "$CN_IP_URL" 2>/dev/null | grep -E '^[0-9]+\.' > "$TMP_CN" 2>/dev/null && [ -s "$TMP_CN" ]; then
-        mv "$TMP_CN" "$DATA_DIR/cn_v4.list"
-        log "CN IPv4 列表更新成功 ($(wc -l < "$DATA_DIR/cn_v4.list") 条)"
-        UPDATED=1
+    if dl_stdout "$CN_IP_URL" 60 | grep -E '^[0-9]+\.' > "$TMP_CN" 2>/dev/null && [ -s "$TMP_CN" ]; then
+        NEW_SHA=$(file_sha256 "$TMP_CN")
+        OLD_SHA=$(file_sha256 "$DATA_DIR/cn_v4.list")
+        if [ "$NEW_SHA" = "$OLD_SHA" ] && [ -n "$OLD_SHA" ]; then
+            log "CN IPv4 列表无变化，跳过更新"
+            rm -f "$TMP_CN"
+        else
+            mv "$TMP_CN" "$DATA_DIR/cn_v4.list"
+            log "CN IPv4 列表更新成功 ($(wc -l < "$DATA_DIR/cn_v4.list") 条)"
+            UPDATED=1
+        fi
     else
         log "CN IPv4 列表下载失败"
+        rm -f "$TMP_CN"
     fi
-    rm -f "$TMP_CN"
 
-    # 2. 更新中国 IPv6 列表
+    # 2. 更新中国 IPv6 列表 (同上)
     TMP_CN6=$(mktemp)
-    if curl -sL --connect-timeout 10 --max-time 60 "$CN_V6_URL" 2>/dev/null | grep -E '^([0-9a-fA-F:]+/)' > "$TMP_CN6" 2>/dev/null && [ -s "$TMP_CN6" ]; then
-        mv "$TMP_CN6" "$DATA_DIR/cn_v6.list"
-        log "CN IPv6 列表更新成功 ($(wc -l < "$DATA_DIR/cn_v6.list") 条)"
-        UPDATED=1
+    if dl_stdout "$CN_V6_URL" 60 | grep -E '^([0-9a-fA-F:]+/)' > "$TMP_CN6" 2>/dev/null && [ -s "$TMP_CN6" ]; then
+        NEW_SHA6=$(file_sha256 "$TMP_CN6")
+        OLD_SHA6=$(file_sha256 "$DATA_DIR/cn_v6.list")
+        if [ "$NEW_SHA6" = "$OLD_SHA6" ] && [ -n "$OLD_SHA6" ]; then
+            log "CN IPv6 列表无变化，跳过更新"
+            rm -f "$TMP_CN6"
+        else
+            mv "$TMP_CN6" "$DATA_DIR/cn_v6.list"
+            log "CN IPv6 列表更新成功 ($(wc -l < "$DATA_DIR/cn_v6.list") 条)"
+            UPDATED=1
+        fi
     else
         log "CN IPv6 列表下载失败或无 IPv6 数据"
+        rm -f "$TMP_CN6"
     fi
-    rm -f "$TMP_CN6"
 
     # 3. 更新 geoip.dat (带校验文件检查)
     update_dat_with_checksum "geoip.dat" "$GEOIP_URL" "$GEOIP_SHA256_URL"
@@ -128,7 +178,7 @@ if [ "$UPDATE_MODE" = "dat" ] || [ "$UPDATE_MODE" = "all" ]; then
 fi
 
 # ====================
-# 4. 如果有文件更新，重启 xrayclient 服务
+# 5. 如果有文件更新，重启 xrayclient 服务
 # ====================
 if [ "$UPDATED" = "1" ]; then
     log "有文件更新，重启 xrayclient 服务..."

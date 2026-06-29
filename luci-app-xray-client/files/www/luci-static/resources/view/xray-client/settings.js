@@ -11,14 +11,15 @@ var UCI_CONF = 'xrayclient';
 var INIT_SCRIPT = '/etc/init.d/xrayclient';
 var LOG_FILE = '/var/log/xrayclient.log';
 var DATA_DIR = '/usr/share/xrayclient';
+var ASSET_DIR = '/usr/share/v2ray';
 var UPDATE_SCRIPT = '/usr/share/xrayclient/update_data.sh';
 
-/* 数据文件路径 */
+/* 数据文件路径 (geoip/geosite 由 v2ray-geoip/v2ray-geosite 包提供) */
 var DATA_FILES = {
     cn_v4: DATA_DIR + '/cn_v4.list',
     cn_v6: DATA_DIR + '/cn_v6.list',
-    geoip: DATA_DIR + '/geoip.dat',
-    geosite: DATA_DIR + '/geosite.dat'
+    geoip: ASSET_DIR + '/geoip.dat',
+    geosite: ASSET_DIR + '/geosite.dat'
 };
 
 /* HTML 转义，防止日志内容中的特殊字符破坏页面 */
@@ -50,7 +51,7 @@ return view.extend({
             }).catch(function () { return false; }),
             uci.load(UCI_CONF),
             fs.read(LOG_FILE).catch(function () { return ''; }),
-            /* 获取 3 个数据文件的修改时间 */
+            /* 获取 4 个数据文件的修改时间 */
             Promise.all(Object.keys(DATA_FILES).map(function (key) {
                 return fs.stat(DATA_FILES[key]).then(function (st) {
                     return { key: key, mtime: st.mtime };
@@ -66,7 +67,7 @@ return view.extend({
         this.running = running;
         var logContent = data[2] || '';
         var fileStats = data[3] || [];
-        var nodes = uci.sections(UCI_CONF, 'vless');
+        var nodes = uci.sections(UCI_CONF, 'node');
 
         /* 将文件 mtime 转为可读时间 */
         var fileMtimeMap = {};
@@ -85,27 +86,85 @@ return view.extend({
         /* ====== 概览 ====== */
         var sOverview = m.section(form.NamedSection, 'main', _('概览'));
 
+        /* 判断活动节点是否有效 (active_node 非空 && 对应 node 存在) */
+        var activeNodeName = uci.get(UCI_CONF, 'main', 'active_node') || '';
+        var activeNodeValid = false;
+        if (activeNodeName) {
+            var activeNodeSection = uci.get(UCI_CONF, activeNodeName);
+            activeNodeValid = !!(activeNodeSection && activeNodeSection.protocol);
+        }
+
         var oStat = sOverview.option(form.DummyValue, '_status', _('运行状态'));
         oStat.renderWidget = function () {
-            return E('span', {
-                style: 'font-weight:bold;color:' + (running ? '#46b450' : '#dc3232')
-            }, '\u25CF ' + (running ? _('运行中') : _('已停止')));
+            /* 判断状态: 运行中 / 已停止 / 启动失败 */
+            var statusText, statusColor;
+            var showCleanupBtn = false;
+            if (running) {
+                statusText = _('运行中');
+                statusColor = '#46b450';
+            } else if (activeNodeValid) {
+                /* 节点已选中且存在，但服务未运行 → 启动失败 */
+                statusText = _('启动失败');
+                statusColor = '#dc3232';
+                showCleanupBtn = true;
+            } else {
+                statusText = _('已停止');
+                statusColor = '#dc3232';
+            }
+
+            var elements = [E('span', {
+                style: 'font-weight:bold;color:' + statusColor
+            }, '\u25CF ' + statusText)];
+
+            if (showCleanupBtn) {
+                elements.push(E('button', {
+                    'type': 'button',
+                    'class': 'cbi-button cbi-button-neutral',
+                    'style': 'margin-left:10px;',
+                    'click': function (ev) {
+                        ui.showModal(_('清理路由规则'), [
+                            E('p', { 'class': 'spinning' }, _('正在清理 nftables 和路由规则...'))
+                        ]);
+                        Promise.all([
+                            fs.exec('/usr/share/xrayclient/remove_nft.sh').catch(function () {}),
+                            fs.exec('/usr/share/xrayclient/remove_route.sh').catch(function () {})
+                        ]).then(function () {
+                            ui.hideModal();
+                            ui.addNotification(null, E('p', _('路由及 nftables 规则已清理。')));
+                            window.setTimeout(function () { window.location.reload(); }, 2000);
+                        });
+                    }
+                }, _('清除路由规则')));
+            }
+
+            return E('div', { style: 'display:flex;align-items:center;gap:8px;' }, elements);
         };
 
         var oActive = sOverview.option(form.ListValue, 'active_node', _('当前代理节点'));
         oActive.value('', _('停用'));
         nodes.forEach(function (s) {
-            oActive.value(s['.name'],
-                s['.name'] + ' (' + (s.address || _('未设置')) + ':' + (s.port || '') + ')');
+            var label = s.alias || ((s.address || _('未设置')) + ':' + (s.port || ''));
+            oActive.value(s['.name'], label);
         });
         oActive.description = _('选择当前使用的代理节点。选择"停用"将停止代理服务；选择节点则通过该节点转发流量。');
 
         /* --- 国内域名 DNS 摘要 --- */
         var oLocalDnsSum = sOverview.option(form.DummyValue, '_local_dns_summary', _('国内域名 DNS'));
+        oLocalDnsSum.rawhtml = true;
         oLocalDnsSum.cfgvalue = function () {
-            var srv = uci.get(UCI_CONF, 'main', 'local_dns_server') || '127.0.0.1';
-            var port = uci.get(UCI_CONF, 'main', 'local_dns_port') || '22653';
-            return srv + ':' + port;
+            var srv = uci.get(UCI_CONF, 'main', 'local_dns_server') || '223.5.5.5';
+            var port = uci.get(UCI_CONF, 'main', 'local_dns_port') || '53';
+            var html = '<span style="font-weight:bold">' + srv + ':' + port + '</span>';
+            /* 检测是否为内网地址 */
+            var isLan = false;
+            if (/^(127\.|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)/.test(srv) ||
+                srv === 'localhost' || srv === '::1') {
+                isLan = true;
+            }
+            if (isLan) {
+                html += '<div style="margin-top:4px;font-size:12px;color:#b35900;">\u26A0 DNS 在本地局域网，请确认其查询流量不经代理，否则将导致循环。</div>';
+            }
+            return html;
         };
 
         /* --- FakeIP 摘要 --- */
@@ -152,57 +211,48 @@ return view.extend({
         };
 
         /* ====== 节点列表 ====== */
-        var sNodes = m.section(form.GridSection, 'vless', _('节点列表'));
+        var sNodes = m.section(form.GridSection, 'node', _('节点列表'));
         sNodes.addremove = true;
         sNodes.nodescriptions = true;
+        sNodes.anonymous = true;
         sNodes.addbtntitle = _('+ 添加节点');
         sNodes.modaltitle = function (section_id) {
-            return _('节点详情') + ' \u2014 ' + section_id;
-        };
-                /* 添加节点时名称输入框的 placeholder 提示 */
-        sNodes.renderSectionAdd = function (extra_class) {
-            var el = form.GridSection.prototype.renderSectionAdd.apply(this, [extra_class]);
-            var input = el.querySelector('input[type="text"]');
-            if (input) {
-                input.placeholder = _('节点名称');
-            }
-            return el;
+            var alias = uci.get(UCI_CONF, section_id, 'alias');
+            return _('节点详情') + ' \u2014 ' + (alias || section_id);
         };
 
-        /* 表格列 */
+        /* 表格列: 别名 + 服务器地址 + 端口 */
+		var dummyProto = sNodes.option(form.DummyValue, 'protocol', _('协议'));
+		dummyProto.modalonly = false;
+        sNodes.option(form.Value, 'alias', _('别名'));
         sNodes.option(form.Value, 'address', _('服务器地址')).datatype = 'host';
         sNodes.option(form.Value, 'port', _('端口')).datatype = 'port';
 
         /* ====== 模态框字段 ====== */
 
         /* --- 协议选择 --- */
-        var oProto = sNodes.option(form.ListValue, '_proto', _('协议'));
+        var oProto = sNodes.option(form.ListValue, 'protocol', _('协议'));
         oProto.modalonly = true;
         oProto.value('', _('-- 请选择 --'));
         oProto.value('vless', 'VLESS');
-        oProto.description = _('选择代理协议类型。目前仅支持 VLESS，后续将支持更多协议。');
-        oProto.cfgvalue = function (section_id) {
-            var section = uci.get(UCI_CONF, section_id);
-            return (section && section['.type']) || '';
-        };
-        oProto.write = function (section_id, formvalue) {
-            uci.set(UCI_CONF, section_id, formvalue);
-        };
+        oProto.value('shadowsocks', 'Shadowsocks');
+        oProto.value('vmess', 'VMess');
+        oProto.description = _('选择代理协议类型。');
 
         /* --- 基本信息（依赖协议 = vless）--- */
         var oId = sNodes.option(form.Value, 'id', _('用户 ID (UUID)'));
         oId.modalonly = true;
-        oId.depends('_proto', 'vless');
+        oId.depends('protocol', 'vless');
 
-        var oEnc = sNodes.option(form.Value, 'encryption', _('加密方式'));
+        var oEnc = sNodes.option(form.Value, 'encryption', _('VLESS 加密 (encryption)'));
         oEnc.modalonly = true;
-        oEnc.depends('_proto', 'vless');
+        oEnc.depends('protocol', 'vless');
         oEnc.placeholder = 'none';
-        oEnc.description = _('默认为 none，通常无需修改。');
+        oEnc.description = _('默认 none。如需 VLESS 加密，可填入加密串（如 mlkem768x25519plus...）。');
 
         var oFlow = sNodes.option(form.ListValue, 'flow', _('Flow (流控)'));
         oFlow.modalonly = true;
-        oFlow.depends('_proto', 'vless');
+        oFlow.depends('protocol', 'vless');
         oFlow.value('', _('不使用'));
         oFlow.value('xtls-rprx-vision', 'xtls-rprx-vision');
         oFlow.value('xtls-rprx-vision-udp443', 'xtls-rprx-vision-udp443');
@@ -210,14 +260,13 @@ return view.extend({
 
         var oLvl = sNodes.option(form.Value, 'level', _('用户等级'));
         oLvl.modalonly = true;
-        oLvl.depends('_proto', 'vless');
+        oLvl.depends('protocol', 'vless');
         oLvl.datatype = 'uinteger';
         oLvl.placeholder = '0';
 
-        /* --- 传输协议（依赖协议 = vless）--- */
+        /* --- 传输协议（通用，所有协议共享）--- */
         var oNet = sNodes.option(form.ListValue, 'network', _('传输协议 (network)'));
         oNet.modalonly = true;
-        oNet.depends('_proto', 'vless');
         oNet.value('raw', 'raw');
         oNet.value('tcp', 'tcp (兼容旧名)');
         oNet.value('ws', 'websocket');
@@ -227,10 +276,90 @@ return view.extend({
         oNet.value('xhttp', 'xhttp');
         oNet.description = _('选择底层传输协议，默认为 raw (TCP)。');
 
-        /* --- 安全协议（依赖协议 = vless）--- */
+        /* --- WebSocket 传输设置 --- */
+        var oWsPath = sNodes.option(form.Value, 'ws_path', _('WS 路径 (path)'));
+        oWsPath.modalonly = true;
+        oWsPath.depends('network', 'ws');
+        oWsPath.placeholder = '/';
+
+        var oWsHost = sNodes.option(form.Value, 'ws_host', _('WS Host'));
+        oWsHost.modalonly = true;
+        oWsHost.depends('network', 'ws');
+
+        /* --- gRPC 传输设置 --- */
+        var oGrpcSvc = sNodes.option(form.Value, 'grpc_serviceName', _('gRPC ServiceName'));
+        oGrpcSvc.modalonly = true;
+        oGrpcSvc.depends('network', 'grpc');
+
+        var oGrpcAuth = sNodes.option(form.Value, 'grpc_authority', _('gRPC Authority'));
+        oGrpcAuth.modalonly = true;
+        oGrpcAuth.depends('network', 'grpc');
+
+        var oGrpcMulti = sNodes.option(form.Flag, 'grpc_multiMode', _('gRPC MultiMode'));
+        oGrpcMulti.modalonly = true;
+        oGrpcMulti.depends('network', 'grpc');
+        oGrpcMulti.description = _('实验性选项，约 20% 性能提升，不保证跨版本兼容。');
+
+        /* --- mKCP 传输设置 --- */
+        var oKcpMtu = sNodes.option(form.Value, 'kcp_mtu', _('mKCP MTU'));
+        oKcpMtu.modalonly = true;
+        oKcpMtu.depends('network', 'mkcp');
+        oKcpMtu.datatype = 'range(576,1460)';
+        oKcpMtu.placeholder = '1350';
+
+        var oKcpTti = sNodes.option(form.Value, 'kcp_tti', _('mKCP TTI (ms)'));
+        oKcpTti.modalonly = true;
+        oKcpTti.depends('network', 'mkcp');
+        oKcpTti.datatype = 'range(10,100)';
+        oKcpTti.placeholder = '50';
+
+        var oKcpUp = sNodes.option(form.Value, 'kcp_uplinkCapacity', _('mKCP 上行带宽 (MB/s)'));
+        oKcpUp.modalonly = true;
+        oKcpUp.depends('network', 'mkcp');
+        oKcpUp.datatype = 'uinteger';
+        oKcpUp.placeholder = '5';
+
+        var oKcpDown = sNodes.option(form.Value, 'kcp_downlinkCapacity', _('mKCP 下行带宽 (MB/s)'));
+        oKcpDown.modalonly = true;
+        oKcpDown.depends('network', 'mkcp');
+        oKcpDown.datatype = 'uinteger';
+        oKcpDown.placeholder = '20';
+
+        var oKcpCong = sNodes.option(form.Flag, 'kcp_congestion', _('mKCP 拥塞控制'));
+        oKcpCong.modalonly = true;
+        oKcpCong.depends('network', 'mkcp');
+
+        /* --- HTTPUpgrade 传输设置 --- */
+        var oHuPath = sNodes.option(form.Value, 'hu_path', _('HTTPUpgrade 路径 (path)'));
+        oHuPath.modalonly = true;
+        oHuPath.depends('network', 'httpupgrade');
+        oHuPath.placeholder = '/';
+
+        var oHuHost = sNodes.option(form.Value, 'hu_host', _('HTTPUpgrade Host'));
+        oHuHost.modalonly = true;
+        oHuHost.depends('network', 'httpupgrade');
+
+        /* --- XHTTP 传输设置 --- */
+        var oXhPath = sNodes.option(form.Value, 'xh_path', _('XHTTP 路径 (path)'));
+        oXhPath.modalonly = true;
+        oXhPath.depends('network', 'xhttp');
+
+        var oXhHost = sNodes.option(form.Value, 'xh_host', _('XHTTP Host'));
+        oXhHost.modalonly = true;
+        oXhHost.depends('network', 'xhttp');
+
+        var oXhMode = sNodes.option(form.ListValue, 'xh_mode', _('XHTTP Mode'));
+        oXhMode.modalonly = true;
+        oXhMode.depends('network', 'xhttp');
+        oXhMode.value('', _('默认'));
+        oXhMode.value('auto', 'auto');
+        oXhMode.value('packet-up', 'packet-up');
+        oXhMode.value('stream-up', 'stream-up');
+        oXhMode.value('stream-one', 'stream-one');
+
+        /* --- 安全协议（通用，所有协议共享）--- */
         var oSec = sNodes.option(form.ListValue, 'security', _('安全 (security)'));
         oSec.modalonly = true;
-        oSec.depends('_proto', 'vless');
         oSec.value('none', 'none');
         oSec.value('tls', 'tls');
         oSec.value('reality', 'reality');
@@ -281,37 +410,102 @@ return view.extend({
         oSPX.depends('security', 'reality');
         oSPX.description = _('REALITY SpiderX 路径，通常留空即可。');
 
+        /* --- 基本信息（依赖协议 = shadowsocks）--- */
+        var oSsMethod = sNodes.option(form.ListValue, 'method', _('加密方式 (method)'));
+        oSsMethod.modalonly = true;
+        oSsMethod.depends('protocol', 'shadowsocks');
+        oSsMethod.value('2022-blake3-aes-128-gcm', '2022-blake3-aes-128-gcm');
+        oSsMethod.value('2022-blake3-aes-256-gcm', '2022-blake3-aes-256-gcm');
+        oSsMethod.value('2022-blake3-chacha20-poly1305', '2022-blake3-chacha20-poly1305');
+        oSsMethod.value('aes-256-gcm', 'aes-256-gcm');
+        oSsMethod.value('aes-128-gcm', 'aes-128-gcm');
+        oSsMethod.value('chacha20-poly1305', 'chacha20-poly1305');
+        oSsMethod.value('xchacha20-poly1305', 'xchacha20-poly1305');
+        oSsMethod.value('none', 'none');
+
+        var oSsPwd = sNodes.option(form.Value, 'ss_password', _('密码 (password)'));
+        oSsPwd.modalonly = true;
+        oSsPwd.depends('protocol', 'shadowsocks');
+        oSsPwd.password = true;
+
+        var oSsLvl = sNodes.option(form.Value, 'level', _('用户等级 (level)'));
+        oSsLvl.modalonly = true;
+        oSsLvl.depends('protocol', 'shadowsocks');
+        oSsLvl.datatype = 'uinteger';
+        oSsLvl.placeholder = '0';
+
+        /* --- 基本信息（依赖协议 = vmess）--- */
+        var oVmId = sNodes.option(form.Value, 'id', _('用户 ID (UUID)'));
+        oVmId.modalonly = true;
+        oVmId.depends('protocol', 'vmess');
+
+        var oVmSec = sNodes.option(form.ListValue, 'vmess_security', _('VMess 加密 (security)'));
+        oVmSec.modalonly = true;
+        oVmSec.depends('protocol', 'vmess');
+        oVmSec.value('auto', 'auto (默认)');
+        oVmSec.value('aes-128-gcm', 'aes-128-gcm');
+        oVmSec.value('chacha20-poly1305', 'chacha20-poly1305');
+        oVmSec.value('none', 'none');
+        oVmSec.value('zero', 'zero');
+
+        var oVmExp = sNodes.option(form.Value, 'experiments', _('实验性功能 (experiments)'));
+        oVmExp.modalonly = true;
+        oVmExp.depends('protocol', 'vmess');
+        oVmExp.description = _('可选值: AuthenticatedLength。NoTerminationSignal 已默认启用无需填写。');
+
+        var oVmLvl = sNodes.option(form.Value, 'level', _('用户等级 (level)'));
+        oVmLvl.modalonly = true;
+        oVmLvl.depends('protocol', 'vmess');
+        oVmLvl.datatype = 'uinteger';
+        oVmLvl.placeholder = '0';
+
         /* --- TLS 专属字段 --- */
         var oAI = sNodes.option(form.Flag, 'allow_insecure', _('允许不安全连接'));
         oAI.modalonly = true;
         oAI.depends('security', 'tls');
         oAI.description = _('允许不安全的 TLS 连接（跳过证书验证）。出于安全性考虑不建议启用，仅在服务端使用自签名证书时开启。');
 
+        /* --- 底层网络设置（通用）--- */
+        var oTcpCong = sNodes.option(form.ListValue, 'tcpcongestion', _('TCP 拥塞控制算法'));
+        oTcpCong.modalonly = true;
+        oTcpCong.value('', _('系统默认'));
+        oTcpCong.value('bbr', 'bbr');
+        oTcpCong.value('cubic', 'cubic');
+        oTcpCong.value('reno', 'reno');
+        oTcpCong.description = _('底层 TCP 拥塞控制算法，通常保持系统默认即可。');
+
         /* ====== 国内域名DNS ====== */
         var sDns = m.section(form.NamedSection, 'main', _('国内域名DNS'));
+
+        /* --- 自定义国内域名 DNS --- */
+        var oCustomDns = sDns.option(form.Flag, 'custom_local_dns', _('自定义国内域名 DNS'));
+        oCustomDns.description = _('勾选后手动指定国内域名 DNS 地址；不勾选则每次启动时自动从系统上游 DNS 检测。');
 
         /* --- 国内域名 DNS --- */
         var oLds = sDns.option(form.Value, 'local_dns_server', _('国内域名 DNS 地址'));
         oLds.datatype = 'host';
         oLds.placeholder = _('用于解析国内域名');
+        oLds.depends('custom_local_dns', '1');
+        oLds.retain = true;
 
         var oLdp = sDns.option(form.Value, 'local_dns_port', _('国内域名 DNS 端口'));
         oLdp.datatype = 'port';
         oLdp.placeholder = '53';
+        oLdp.depends('custom_local_dns', '1');
+        oLdp.retain = true;
 
         /* 国内 DNS 警告 */
         var oWarn = sDns.option(form.DummyValue, '_local_dns_warn', _(' '));
+        oWarn.depends('custom_local_dns', '1');
         oWarn.renderWidget = function () {
             return E('div', {
                 style: 'padding:10px 14px;margin:6px 0;border:1px solid #ffb900;background:#fff8e5;border-radius:4px;font-size:13px;line-height:1.6;'
             }, [
                 E('strong', { style: 'color:#b35900' }, '\u26A0 ' + _('重要提示')),
                 E('br'),
-                _('用于解析国内域名的 DNS服务器其流量不可经由本代理转发，否则将导致 DNS 查询陷入无限循环。'),
+                _('用于解析国内域名的 DNS 服务器其流量不可经由本代理转发，否则将导致 DNS 查询陷入无限循环。'),
                 E('br'),
-                _('切勿将网关指向本代理软件所在路由器的 DNS 配置为本项。'),
-                E('br'),
-                _('如果系统默认使用了安装时自动创建的 dnsmasq 实例（监听端口 22653），该实例流量已被特别放行，可安全使用。')
+                _('切勿将网关指向本代理软件所在路由器的 DNS 配置为本项。')
             ]);
         };
 
@@ -372,7 +566,6 @@ return view.extend({
 
         /* ====== 访问控制 ====== */
         var sAccess = m.section(form.NamedSection, 'main', _('访问控制'));
-        sAccess.description = '<div style="font-size:14px;font-weight:600;color:#555;margin-bottom:24px;">' + _('黑名单中的域名和 IP 将强制经由代理转发。白名单中的域名和 IP 将直连，不经过代理。') + '</div>';
 
         /* --- 监控接口 --- */
         var oIface = sAccess.option(widgets.NetworkSelect, 'nft_lan_iface', _('监控接口'));
@@ -578,10 +771,6 @@ return view.extend({
         var oUsrGid = sLog.option(form.Value, 'xray_usr_gid', _('Xray 运行用户 GID'));
         oUsrGid.description = _('Xray 进程运行用户的 GID，nftables 通过此 GID 排除 Xray 自身流量。');
 
-        var oDnsName = sLog.option(form.Value, 'dns_name', _('dnsmasq 实例名'));
-        var oDnsPort = sLog.option(form.Value, 'dns_port', _('dnsmasq 监听端口'));
-        oDnsPort.datatype = 'port';
-
         return m.render().then(function (node) {
             /* 绑定所有更新按钮 (概览页) */
             var btns = node.querySelectorAll('[id^="xrayclient-update-btn"]');
@@ -590,24 +779,54 @@ return view.extend({
                     ui.showModal(_('数据更新'), [
                         E('p', { 'class': 'spinning' }, _('正在下载数据文件并重启服务，请稍候...'))
                     ]);
-                    fs.exec(UPDATE_SCRIPT).then(function (res) {
-                        ui.hideModal();
-                        if (res.code === 0) {
-                            /* 读取日志判断是否有实际更新 */
-                            fs.read(LOG_FILE).catch(function () { return ''; }).then(function (logContent) {
-                                var lastLines = logContent.slice(-800);
-                                if (lastLines.indexOf('数据已是最新，跳过更新') >= 0 && lastLines.indexOf('更新成功') < 0) {
-                                    ui.addNotification(null, E('p', _('数据已最新，无需更新！')));
-                                } else {
+
+                    /* 临时提高 RPC 超时到 120 秒 (默认 20 秒不够下载大文件)
+                     * rpcd 后端默认也是 120 秒，两者对齐 */
+                    var oldTimeout = L.env.rpctimeout;
+                    L.env.rpctimeout = 120;
+
+                    /* 记录更新前所有数据文件的 mtime */
+                    Promise.all(Object.keys(DATA_FILES).map(function (key) {
+                        return fs.stat(DATA_FILES[key]).then(function (st) {
+                            return { key: key, mtime: st.mtime };
+                        }).catch(function () {
+                            return { key: key, mtime: null };
+                        });
+                    })).then(function (beforeStats) {
+                        return fs.exec(UPDATE_SCRIPT).then(function (res) {
+                            L.env.rpctimeout = oldTimeout;
+                            if (res.code !== 0) {
+                                ui.hideModal();
+                                ui.addNotification(null, E('p', _('数据更新失败 (exit code: %d)').format(res.code)));
+                                window.setTimeout(function () { window.location.reload(); }, 2000);
+                                return;
+                            }
+                            /* 更新后再次获取 mtime，对比判断是否有变化 */
+                            Promise.all(Object.keys(DATA_FILES).map(function (key) {
+                                return fs.stat(DATA_FILES[key]).then(function (st) {
+                                    return { key: key, mtime: st.mtime };
+                                }).catch(function () {
+                                    return { key: key, mtime: null };
+                                });
+                            })).then(function (afterStats) {
+                                ui.hideModal();
+                                var changed = false;
+                                for (var i = 0; i < afterStats.length; i++) {
+                                    if (afterStats[i].mtime !== beforeStats[i].mtime) {
+                                        changed = true;
+                                        break;
+                                    }
+                                }
+                                if (changed) {
                                     ui.addNotification(null, E('p', _('数据更新完成，请查看日志了解详情。')));
+                                } else {
+                                    ui.addNotification(null, E('p', _('数据已最新，无需更新！')));
                                 }
                                 window.setTimeout(function () { window.location.reload(); }, 2000);
                             });
-                        } else {
-                            ui.addNotification(null, E('p', _('数据更新失败 (exit code: %d)').format(res.code)));
-                            window.setTimeout(function () { window.location.reload(); }, 2000);
-                        }
+                        });
                     }).catch(function (err) {
+                        L.env.rpctimeout = oldTimeout;
                         ui.hideModal();
                         ui.addNotification(null, E('p', _('操作失败: %s').format(err.message || err)));
                     });
@@ -640,13 +859,19 @@ return view.extend({
         }).then(function () {
             /* 根据服务原状态 + 用户选择，决定 start/stop/restart */
             var activeNode = uci.get(UCI_CONF, 'main', 'active_node') || '';
+            /* 两层判断: active_node 非空 && 对应 node 存在 */
+            var nodeExists = false;
+            if (activeNode) {
+                var nodeSection = uci.get(UCI_CONF, activeNode);
+                nodeExists = !!(nodeSection && nodeSection.protocol);
+            }
             var action = null;
 
-            if (activeNode) {
-                /* 用户选择了某个节点 */
+            if (nodeExists) {
+                /* 用户选择了有效节点 */
                 action = wasRunning ? 'restart' : 'start';
             } else if (wasRunning) {
-                /* 用户选择了"停用"，服务原来在运行 */
+                /* 用户选择了"停用"或节点已删除，服务原来在运行 */
                 action = 'stop';
             }
             /* 服务未运行且选择停用 → 无需操作 */
