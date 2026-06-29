@@ -603,13 +603,20 @@ return view.extend({
                     ui.showModal(_('数据更新'), [
                         E('p', { 'class': 'spinning' }, _('正在下载数据文件并重启服务，请稍候...'))
                     ]);
+
+                    /* 临时提高 RPC 超时到 120 秒 (默认 20 秒不够下载大文件)
+                     * rpcd 后端默认也是 120 秒，两者对齐 */
+                    var oldTimeout = L.env.rpctimeout;
+                    L.env.rpctimeout = 120;
+
                     fs.exec(UPDATE_SCRIPT).then(function (res) {
+                        L.env.rpctimeout = oldTimeout;
                         ui.hideModal();
                         if (res.code === 0) {
                             /* 读取日志判断是否有实际更新 */
                             fs.read(LOG_FILE).catch(function () { return ''; }).then(function (logContent) {
                                 var lastLines = logContent.slice(-800);
-                                if (lastLines.indexOf('数据已是最新，跳过更新') >= 0 && lastLines.indexOf('更新成功') < 0) {
+                                if (lastLines.indexOf('更新成功') < 0) {
                                     ui.addNotification(null, E('p', _('数据已最新，无需更新！')));
                                 } else {
                                     ui.addNotification(null, E('p', _('数据更新完成，请查看日志了解详情。')));
@@ -621,6 +628,7 @@ return view.extend({
                             window.setTimeout(function () { window.location.reload(); }, 2000);
                         }
                     }).catch(function (err) {
+                        L.env.rpctimeout = oldTimeout;
                         ui.hideModal();
                         ui.addNotification(null, E('p', _('操作失败: %s').format(err.message || err)));
                     });

@@ -77,12 +77,13 @@ log "开始更新数据文件 (模式: ${UPDATE_MODE})..."
 
 # ====================
 # 通用函数: 带 sha256 校验的 dat 文件更新
+# 校验文件保存在 DATA_DIR (不写入 v2ray 包目录)
 # ====================
 update_dat_with_checksum() {
     DAT_NAME="$1"       # geoip.dat / geosite.dat
     DAT_URL="$2"        # dat 下载 URL
     SHA_URL="$3"        # 校验文件 URL
-    SHA_LOCAL="$ASSET_DIR/${DAT_NAME}.sha256sum"
+    SHA_LOCAL="$DATA_DIR/${DAT_NAME}.sha256sum"
 
     # 下载新的校验文件
     TMP_SHA=$(mktemp)
@@ -116,7 +117,7 @@ update_dat_with_checksum() {
     if dl "$DAT_URL" "$TMP_DAT" 120; then
         mv "$TMP_DAT" "$ASSET_DIR/${DAT_NAME}"
         log "${DAT_NAME} 更新成功 ($(ls -lh "$ASSET_DIR/${DAT_NAME}" | awk '{print $5}'))"
-        # 保存校验文件
+        # 保存校验文件到 DATA_DIR
         if [ -n "$TMP_SHA" ]; then
             mv "$TMP_SHA" "$SHA_LOCAL"
         fi
@@ -128,30 +129,51 @@ update_dat_with_checksum() {
 }
 
 # ====================
+# 通用函数: 计算文件 sha256 (BusyBox 自带，无需第三方工具)
+# ====================
+file_sha256() {
+    [ -f "$1" ] && sha256sum "$1" 2>/dev/null | awk '{print $1}'
+}
+
+# ====================
 # 1. 更新 IP 类数据 (cn_v4 + cn_v6 + geoip)
 # ====================
 if [ "$UPDATE_MODE" = "ip" ] || [ "$UPDATE_MODE" = "all" ]; then
-    # 1. 更新中国 IPv4 列表
+    # 1. 更新中国 IPv4 列表 (下载到临时文件，sha256 对比，无变化则跳过)
     TMP_CN=$(mktemp)
     if dl_stdout "$CN_IP_URL" 60 | grep -E '^[0-9]+\.' > "$TMP_CN" 2>/dev/null && [ -s "$TMP_CN" ]; then
-        mv "$TMP_CN" "$DATA_DIR/cn_v4.list"
-        log "CN IPv4 列表更新成功 ($(wc -l < "$DATA_DIR/cn_v4.list") 条)"
-        UPDATED=1
+        NEW_SHA=$(file_sha256 "$TMP_CN")
+        OLD_SHA=$(file_sha256 "$DATA_DIR/cn_v4.list")
+        if [ "$NEW_SHA" = "$OLD_SHA" ] && [ -n "$OLD_SHA" ]; then
+            log "CN IPv4 列表无变化，跳过更新"
+            rm -f "$TMP_CN"
+        else
+            mv "$TMP_CN" "$DATA_DIR/cn_v4.list"
+            log "CN IPv4 列表更新成功 ($(wc -l < "$DATA_DIR/cn_v4.list") 条)"
+            UPDATED=1
+        fi
     else
         log "CN IPv4 列表下载失败"
+        rm -f "$TMP_CN"
     fi
-    rm -f "$TMP_CN"
 
-    # 2. 更新中国 IPv6 列表
+    # 2. 更新中国 IPv6 列表 (同上)
     TMP_CN6=$(mktemp)
     if dl_stdout "$CN_V6_URL" 60 | grep -E '^([0-9a-fA-F:]+/)' > "$TMP_CN6" 2>/dev/null && [ -s "$TMP_CN6" ]; then
-        mv "$TMP_CN6" "$DATA_DIR/cn_v6.list"
-        log "CN IPv6 列表更新成功 ($(wc -l < "$DATA_DIR/cn_v6.list") 条)"
-        UPDATED=1
+        NEW_SHA6=$(file_sha256 "$TMP_CN6")
+        OLD_SHA6=$(file_sha256 "$DATA_DIR/cn_v6.list")
+        if [ "$NEW_SHA6" = "$OLD_SHA6" ] && [ -n "$OLD_SHA6" ]; then
+            log "CN IPv6 列表无变化，跳过更新"
+            rm -f "$TMP_CN6"
+        else
+            mv "$TMP_CN6" "$DATA_DIR/cn_v6.list"
+            log "CN IPv6 列表更新成功 ($(wc -l < "$DATA_DIR/cn_v6.list") 条)"
+            UPDATED=1
+        fi
     else
         log "CN IPv6 列表下载失败或无 IPv6 数据"
+        rm -f "$TMP_CN6"
     fi
-    rm -f "$TMP_CN6"
 
     # 3. 更新 geoip.dat (带校验文件检查)
     update_dat_with_checksum "geoip.dat" "$GEOIP_URL" "$GEOIP_SHA256_URL"
