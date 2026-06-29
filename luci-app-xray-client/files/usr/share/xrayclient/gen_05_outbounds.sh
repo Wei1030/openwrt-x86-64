@@ -4,7 +4,7 @@ UCI_CONF="xrayclient"
 
 ACTIVE_NODE=$(uci -q get ${UCI_CONF}.main.active_node)
 
-# 检查 active_node 是否存在且是 node 类型
+# 读取活动节点的协议类型 (从 protocol 字段)
 NODE_TYPE=""
 if [ -n "$ACTIVE_NODE" ]; then
     NODE_TYPE=$(uci -q get ${UCI_CONF}.${ACTIVE_NODE}.protocol)
@@ -24,81 +24,50 @@ gen_vless() {
     local fp=$(uci -q get ${UCI_CONF}.${node}.fingerprint)
     local pwd=$(uci -q get ${UCI_CONF}.${node}.password)
     local sid=$(uci -q get ${UCI_CONF}.${node}.shortId)
-    local sp=$(uci -q get ${UCI_CONF}.${node}.spiderX)
-    local path=$(uci -q get ${UCI_CONF}.${node}.path)
-    local host=$(uci -q get ${UCI_CONF}.${node}.host)
-    local sni=$(uci -q get ${UCI_CONF}.${node}.sni)
+    local mld=$(uci -q get ${UCI_CONF}.${node}.mldsa65Verify)
+    local spx=$(uci -q get ${UCI_CONF}.${node}.spiderX)
+    local allow_insecure=$(uci -q get ${UCI_CONF}.${node}.allow_insecure)
 
-    # 默认值
     [ -z "$enc" ] && enc="none"
-    [ -z "$flow" ] && flow=""
     [ -z "$lvl" ] && lvl=0
-    [ -z "$net" ] && net="raw"
     [ -z "$sec" ] && sec="none"
+    [ -z "$net" ] && net="raw"
 
-    # 构造 streamSettings
-    STREAM_JSON=""
-    case "$net" in
-        raw|tcp)
-            NET_OUTER='"tcpSettings": {}'
-            ;;
-        ws)
-            WS_PATH="${path:-/}"
-            WS_HOST="${host:-$addr}"
-            NET_OUTER="{ \"wsSettings\": { \"path\": \"${WS_PATH}\", \"headers\": { \"Host\": \"${WS_HOST}\" } } }"
-            ;;
-        grpc)
-            GRPC_SN="${sn:-}"
-            NET_OUTER="{ \"grpcSettings\": { \"serviceName\": \"${GRPC_SN}\" } }"
-            ;;
-        mkcp)
-            NET_OUTER='"kcpSettings": {}'
-            ;;
-        httpupgrade)
-            HU_PATH="${path:-/}"
-            HU_HOST="${host:-$addr}"
-            NET_OUTER="{ \"httpupgradeSettings\": { \"path\": \"${HU_PATH}\", \"host\": \"${HU_HOST}\" } }"
-            ;;
-        xhttp)
-            XH_PATH="${path:-/}"
-            XH_HOST="${host:-$addr}"
-            NET_OUTER="{ \"xhttpSettings\": { \"path\": \"${XH_PATH}\", \"host\": \"${XH_HOST}\" } }"
-            ;;
-        *)
-            NET_OUTER='"tcpSettings": {}'
-            ;;
-    esac
-
-    # 构造 security
-    SEC_JSON='"none"'
+    # 构建 securitySettings JSON 片段
+    local sec_json=""
     case "$sec" in
-        none)
-            SEC_JSON='"none"'
+        reality)
+            sec_json="\"realitySettings\": {
+                \"serverName\": \"${sn}\", \"fingerprint\": \"${fp}\",
+                \"password\": \"${pwd}\", \"shortId\": \"${sid}\",
+                \"mldsa65Verify\": \"${mld}\", \"spiderX\": \"${spx}\"
+            }"
             ;;
         tls)
-            TLS_SN="${sn:-$sni}"
-            TLS_FP="${fp:-}"
-            if [ -n "$TLS_FP" ]; then
-                SEC_JSON="{ \"tls\": { \"serverName\": \"${TLS_SN}\", \"fingerprint\": \"${TLS_FP}\" } }"
-            else
-                SEC_JSON="{ \"tls\": { \"serverName\": \"${TLS_SN}\" } }"
-            fi
+            local ai="false"
+            [ "$allow_insecure" = "1" ] && ai="true"
+            sec_json="\"tlsSettings\": {
+                \"serverName\": \"${sn}\", \"fingerprint\": \"${fp}\",
+                \"allowInsecure\": ${ai}
+            }"
             ;;
-        reality)
-            R_SN="${sn:-$sni}"
-            R_FP="${fp:-}"
-            R_PWD="${pwd:-}"
-            R_SID="${sid:-}"
-            R_SP="${sp:-}"
-            REALITY_INNER="{ \"serverName\": \"${R_SN}\", \"fingerprint\": \"${R_FP}\", \"publicKey\": \"${R_PWD}\", \"shortId\": \"${R_SID}\" }"
-            if [ -n "$R_SP" ]; then
-                REALITY_INNER=$(echo "$REALITY_INNER" | sed 's/}$/,"spiderX":"'"$R_SP"'"}/')
-            fi
-            SEC_JSON="{ \"reality\": ${REALITY_INNER} }"
+        none)
+            sec_json=""
             ;;
     esac
 
-    stream_json="\"streamSettings\": { \"network\": \"${net}\", ${NET_OUTER}, \"security\": ${SEC_JSON} }"
+    # 组装 streamSettings
+    local stream_json=""
+    if [ -n "$sec_json" ]; then
+        stream_json="\"streamSettings\": {
+            \"network\": \"${net}\", \"security\": \"${sec}\",
+            ${sec_json}
+        }"
+    else
+        stream_json="\"streamSettings\": {
+            \"network\": \"${net}\", \"security\": \"none\"
+        }"
+    fi
 
     cat << JSONEOF
 {
