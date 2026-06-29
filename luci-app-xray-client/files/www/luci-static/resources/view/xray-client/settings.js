@@ -233,7 +233,9 @@ return view.extend({
         oProto.modalonly = true;
         oProto.value('', _('-- 请选择 --'));
         oProto.value('vless', 'VLESS');
-        oProto.description = _('选择代理协议类型。目前仅支持 VLESS，后续将支持更多协议。');
+        oProto.value('shadowsocks', 'Shadowsocks');
+        oProto.value('vmess', 'VMess');
+        oProto.description = _('选择代理协议类型。');
 
         /* --- 基本信息（依赖协议 = vless）--- */
         var oId = sNodes.option(form.Value, 'id', _('用户 ID (UUID)'));
@@ -405,6 +407,30 @@ return view.extend({
         oSPX.modalonly = true;
         oSPX.depends('security', 'reality');
         oSPX.description = _('REALITY SpiderX 路径，通常留空即可。');
+
+        /* --- 基本信息（依赖协议 = shadowsocks）--- */
+        var oSsMethod = sNodes.option(form.ListValue, 'method', _('加密方式 (method)'));
+        oSsMethod.modalonly = true;
+        oSsMethod.depends('protocol', 'shadowsocks');
+        oSsMethod.value('2022-blake3-aes-128-gcm', '2022-blake3-aes-128-gcm');
+        oSsMethod.value('2022-blake3-aes-256-gcm', '2022-blake3-aes-256-gcm');
+        oSsMethod.value('2022-blake3-chacha20-poly1305', '2022-blake3-chacha20-poly1305');
+        oSsMethod.value('aes-256-gcm', 'aes-256-gcm');
+        oSsMethod.value('aes-128-gcm', 'aes-128-gcm');
+        oSsMethod.value('chacha20-poly1305', 'chacha20-poly1305');
+        oSsMethod.value('xchacha20-poly1305', 'xchacha20-poly1305');
+        oSsMethod.value('none', 'none');
+
+        var oSsPwd = sNodes.option(form.Value, 'ss_password', _('密码 (password)'));
+        oSsPwd.modalonly = true;
+        oSsPwd.depends('protocol', 'shadowsocks');
+        oSsPwd.password = true;
+
+        var oSsLvl = sNodes.option(form.Value, 'level', _('用户等级 (level)'));
+        oSsLvl.modalonly = true;
+        oSsLvl.depends('protocol', 'shadowsocks');
+        oSsLvl.datatype = 'uinteger';
+        oSsLvl.placeholder = '0';
 
         /* --- TLS 专属字段 --- */
         var oAI = sNodes.option(form.Flag, 'allow_insecure', _('允许不安全连接'));

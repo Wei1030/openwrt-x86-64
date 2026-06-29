@@ -182,9 +182,46 @@ gen_vless() {
 JSONEOF
 }
 
+gen_shadowsocks() {
+    local node=$1
+    local addr=$(uci -q get ${UCI_CONF}.${node}.address)
+    local port=$(uci -q get ${UCI_CONF}.${node}.port)
+    local method=$(uci -q get ${UCI_CONF}.${node}.method)
+    local password=$(uci -q get ${UCI_CONF}.${node}.ss_password)
+    local lvl=$(uci -q get ${UCI_CONF}.${node}.level)
+    local net=$(uci -q get ${UCI_CONF}.${node}.network)
+    local sec=$(uci -q get ${UCI_CONF}.${node}.security)
+
+    [ -z "$lvl" ] && lvl=0
+    [ -z "$sec" ] && sec="none"
+    [ -z "$net" ] && net="raw"
+
+    local stream_json=$(gen_stream_settings "$node" "$net" "$sec")
+
+    cat << JSONEOF
+{
+    "outbounds": [
+        {
+            "protocol": "shadowsocks",
+            "settings": {
+                "address": "${addr}", "port": ${port},
+                "method": "${method}", "password": "${password}",
+                "level": ${lvl}
+            },
+            "tag": "proxy",
+            ${stream_json}
+        }
+    ]
+}
+JSONEOF
+}
+
 case "$NODE_TYPE" in
     vless)
         gen_vless "$ACTIVE_NODE" > "$CONF_DIR/05_outbounds_tail.json"
+        ;;
+    shadowsocks)
+        gen_shadowsocks "$ACTIVE_NODE" > "$CONF_DIR/05_outbounds_tail.json"
         ;;
     "")
         echo "{ \"error\": \"未配置代理节点\" }" > "$CONF_DIR/05_outbounds_tail.json"
