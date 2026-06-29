@@ -21,8 +21,8 @@ define Package/$(PKG_NAME)
   CATEGORY:=LuCI
   SUBMENU:=3. Applications
   TITLE:=Xray Client with LuCI
-  DEPENDS:=+v2ray-geoip +v2ray-geosite +xray-core +ip-full +ucode +uci +luci-base
-  PKGARCH:=x86_64
+  DEPENDS:=+firewall4 +nftables +kmod-nft-socket +kmod-nft-tproxy +kmod-tcp-bbr +v2ray-geoip +v2ray-geosite +xray-core +ip-full +uci +luci-base
+  PKGARCH:=all
 endef
 
 define Package/$(PKG_NAME)/description
