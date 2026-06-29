@@ -345,11 +345,13 @@ return view.extend({
         oLds.datatype = 'host';
         oLds.placeholder = _('用于解析国内域名');
         oLds.depends('custom_local_dns', '1');
+        oLds.retain = true;
 
         var oLdp = sDns.option(form.Value, 'local_dns_port', _('国内域名 DNS 端口'));
         oLdp.datatype = 'port';
         oLdp.placeholder = '53';
         oLdp.depends('custom_local_dns', '1');
+        oLdp.retain = true;
 
         /* 国内 DNS 警告 */
         var oWarn = sDns.option(form.DummyValue, '_local_dns_warn', _(' '));
