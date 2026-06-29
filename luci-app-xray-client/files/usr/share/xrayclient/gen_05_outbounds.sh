@@ -10,6 +10,143 @@ if [ -n "$ACTIVE_NODE" ]; then
     NODE_TYPE=$(uci -q get ${UCI_CONF}.${ACTIVE_NODE}.protocol)
 fi
 
+# ====================
+# 通用函数: 构建传输方式 Settings JSON 片段
+# 根据 network 类型生成对应的 xxxSettings
+# ====================
+gen_transport_settings() {
+    local node=$1
+    local net=$2
+    local transport_json=""
+
+    case "$net" in
+        raw|tcp)
+            transport_json=""
+            ;;
+        ws|websocket)
+            local ws_path=$(uci -q get ${UCI_CONF}.${node}.ws_path)
+            local ws_host=$(uci -q get ${UCI_CONF}.${node}.ws_host)
+            local ws_heartbeat=$(uci -q get ${UCI_CONF}.${node}.ws_heartbeat)
+            local inner="\"path\": \"${ws_path:-/}\""
+            [ -n "$ws_host" ] && inner="${inner}, \"host\": \"${ws_host}\""
+            [ -n "$ws_heartbeat" ] && inner="${inner}, \"heartbeatPeriod\": ${ws_heartbeat}"
+            transport_json="\"wsSettings\": { ${inner} }"
+            ;;
+        grpc)
+            local grpc_svc=$(uci -q get ${UCI_CONF}.${node}.grpc_serviceName)
+            local grpc_auth=$(uci -q get ${UCI_CONF}.${node}.grpc_authority)
+            local grpc_multi=$(uci -q get ${UCI_CONF}.${node}.grpc_multiMode)
+            local inner=""
+            [ -n "$grpc_svc" ] && inner="\"serviceName\": \"${grpc_svc}\""
+            [ -n "$grpc_auth" ] && inner="${inner:+${inner}, }\"authority\": \"${grpc_auth}\""
+            if [ "$grpc_multi" = "1" ]; then
+                inner="${inner:+${inner}, }\"multiMode\": true"
+            fi
+            [ -n "$inner" ] && transport_json="\"grpcSettings\": { ${inner} }"
+            ;;
+        mkcp)
+            local kcp_mtu=$(uci -q get ${UCI_CONF}.${node}.kcp_mtu)
+            local kcp_tti=$(uci -q get ${UCI_CONF}.${node}.kcp_tti)
+            local kcp_up=$(uci -q get ${UCI_CONF}.${node}.kcp_uplinkCapacity)
+            local kcp_down=$(uci -q get ${UCI_CONF}.${node}.kcp_downlinkCapacity)
+            local kcp_cong=$(uci -q get ${UCI_CONF}.${node}.kcp_congestion)
+            local inner=""
+            [ -n "$kcp_mtu" ] && inner="\"mtu\": ${kcp_mtu}"
+            [ -n "$kcp_tti" ] && inner="${inner:+${inner}, }\"tti\": ${kcp_tti}"
+            [ -n "$kcp_up" ] && inner="${inner:+${inner}, }\"uplinkCapacity\": ${kcp_up}"
+            [ -n "$kcp_down" ] && inner="${inner:+${inner}, }\"downlinkCapacity\": ${kcp_down}"
+            if [ "$kcp_cong" = "1" ]; then
+                inner="${inner:+${inner}, }\"congestion\": true"
+            fi
+            [ -n "$inner" ] && transport_json="\"kcpSettings\": { ${inner} }"
+            ;;
+        httpupgrade)
+            local hu_path=$(uci -q get ${UCI_CONF}.${node}.hu_path)
+            local hu_host=$(uci -q get ${UCI_CONF}.${node}.hu_host)
+            local inner="\"path\": \"${hu_path:-/}\""
+            [ -n "$hu_host" ] && inner="${inner}, \"host\": \"${hu_host}\""
+            transport_json="\"httpupgradeSettings\": { ${inner} }"
+            ;;
+        xhttp)
+            # XHTTP 文档指向外部讨论，基本配置含 path/host
+            local xh_path=$(uci -q get ${UCI_CONF}.${node}.xh_path)
+            local xh_host=$(uci -q get ${UCI_CONF}.${node}.xh_host)
+            local xh_mode=$(uci -q get ${UCI_CONF}.${node}.xh_mode)
+            local inner=""
+            [ -n "$xh_path" ] && inner="\"path\": \"${xh_path}\""
+            [ -n "$xh_host" ] && inner="${inner:+${inner}, }\"host\": \"${xh_host}\""
+            [ -n "$xh_mode" ] && inner="${inner:+${inner}, }\"mode\": \"${xh_mode}\""
+            [ -n "$inner" ] && transport_json="\"xhttpSettings\": { ${inner} }"
+            ;;
+    esac
+
+    echo "$transport_json"
+}
+
+# ====================
+# 通用函数: 构建 sockopt JSON 片段
+# ====================
+gen_sockopt() {
+    local node=$1
+    local tcp_cong=$(uci -q get ${UCI_CONF}.${node}.tcpcongestion)
+    if [ -n "$tcp_cong" ]; then
+        echo "\"sockopt\": { \"tcpcongestion\": \"${tcp_cong}\" }"
+    fi
+}
+
+# ====================
+# 通用函数: 构建 streamSettings JSON
+# 调用 gen_transport_settings 和 gen_sockopt
+# ====================
+gen_stream_settings() {
+    local node=$1
+    local net=$2
+    local sec=$3
+
+    # 传输方式 settings
+    local transport_json=$(gen_transport_settings "$node" "$net")
+
+    # 安全 settings
+    local sec_json=""
+    case "$sec" in
+        reality)
+            local sn=$(uci -q get ${UCI_CONF}.${node}.serverName)
+            local fp=$(uci -q get ${UCI_CONF}.${node}.fingerprint)
+            local pwd=$(uci -q get ${UCI_CONF}.${node}.password)
+            local sid=$(uci -q get ${UCI_CONF}.${node}.shortId)
+            local mld=$(uci -q get ${UCI_CONF}.${node}.mldsa65Verify)
+            local spx=$(uci -q get ${UCI_CONF}.${node}.spiderX)
+            sec_json="\"realitySettings\": {
+                \"serverName\": \"${sn}\", \"fingerprint\": \"${fp}\",
+                \"password\": \"${pwd}\", \"shortId\": \"${sid}\",
+                \"mldsa65Verify\": \"${mld}\", \"spiderX\": \"${spx}\"
+            }"
+            ;;
+        tls)
+            local sn=$(uci -q get ${UCI_CONF}.${node}.serverName)
+            local fp=$(uci -q get ${UCI_CONF}.${node}.fingerprint)
+            local allow_insecure=$(uci -q get ${UCI_CONF}.${node}.allow_insecure)
+            local ai="false"
+            [ "$allow_insecure" = "1" ] && ai="true"
+            sec_json="\"tlsSettings\": {
+                \"serverName\": \"${sn}\", \"fingerprint\": \"${fp}\",
+                \"allowInsecure\": ${ai}
+            }"
+            ;;
+    esac
+
+    # sockopt
+    local sockopt_json=$(gen_sockopt "$node")
+
+    # 组装
+    local parts="\"network\": \"${net}\", \"security\": \"${sec}\""
+    [ -n "$transport_json" ] && parts="${parts}, ${transport_json}"
+    [ -n "$sec_json" ] && parts="${parts}, ${sec_json}"
+    [ -n "$sockopt_json" ] && parts="${parts}, ${sockopt_json}"
+
+    echo "\"streamSettings\": { ${parts} }"
+}
+
 gen_vless() {
     local node=$1
     local addr=$(uci -q get ${UCI_CONF}.${node}.address)
@@ -20,54 +157,13 @@ gen_vless() {
     local lvl=$(uci -q get ${UCI_CONF}.${node}.level)
     local net=$(uci -q get ${UCI_CONF}.${node}.network)
     local sec=$(uci -q get ${UCI_CONF}.${node}.security)
-    local sn=$(uci -q get ${UCI_CONF}.${node}.serverName)
-    local fp=$(uci -q get ${UCI_CONF}.${node}.fingerprint)
-    local pwd=$(uci -q get ${UCI_CONF}.${node}.password)
-    local sid=$(uci -q get ${UCI_CONF}.${node}.shortId)
-    local mld=$(uci -q get ${UCI_CONF}.${node}.mldsa65Verify)
-    local spx=$(uci -q get ${UCI_CONF}.${node}.spiderX)
-    local allow_insecure=$(uci -q get ${UCI_CONF}.${node}.allow_insecure)
 
     [ -z "$enc" ] && enc="none"
     [ -z "$lvl" ] && lvl=0
     [ -z "$sec" ] && sec="none"
     [ -z "$net" ] && net="raw"
 
-    # 构建 securitySettings JSON 片段
-    local sec_json=""
-    case "$sec" in
-        reality)
-            sec_json="\"realitySettings\": {
-                \"serverName\": \"${sn}\", \"fingerprint\": \"${fp}\",
-                \"password\": \"${pwd}\", \"shortId\": \"${sid}\",
-                \"mldsa65Verify\": \"${mld}\", \"spiderX\": \"${spx}\"
-            }"
-            ;;
-        tls)
-            local ai="false"
-            [ "$allow_insecure" = "1" ] && ai="true"
-            sec_json="\"tlsSettings\": {
-                \"serverName\": \"${sn}\", \"fingerprint\": \"${fp}\",
-                \"allowInsecure\": ${ai}
-            }"
-            ;;
-        none)
-            sec_json=""
-            ;;
-    esac
-
-    # 组装 streamSettings
-    local stream_json=""
-    if [ -n "$sec_json" ]; then
-        stream_json="\"streamSettings\": {
-            \"network\": \"${net}\", \"security\": \"${sec}\",
-            ${sec_json}
-        }"
-    else
-        stream_json="\"streamSettings\": {
-            \"network\": \"${net}\", \"security\": \"none\"
-        }"
-    fi
+    local stream_json=$(gen_stream_settings "$node" "$net" "$sec")
 
     cat << JSONEOF
 {

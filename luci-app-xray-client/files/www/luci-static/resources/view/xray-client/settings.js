@@ -240,11 +240,11 @@ return view.extend({
         oId.modalonly = true;
         oId.depends('protocol', 'vless');
 
-        var oEnc = sNodes.option(form.Value, 'encryption', _('加密方式'));
+        var oEnc = sNodes.option(form.Value, 'encryption', _('VLESS 加密 (encryption)'));
         oEnc.modalonly = true;
         oEnc.depends('protocol', 'vless');
         oEnc.placeholder = 'none';
-        oEnc.description = _('默认为 none，通常无需修改。');
+        oEnc.description = _('默认 none。如需 VLESS 加密，可填入加密串（如 mlkem768x25519plus...）。');
 
         var oFlow = sNodes.option(form.ListValue, 'flow', _('Flow (流控)'));
         oFlow.modalonly = true;
@@ -260,10 +260,9 @@ return view.extend({
         oLvl.datatype = 'uinteger';
         oLvl.placeholder = '0';
 
-        /* --- 传输协议（依赖协议 = vless）--- */
+        /* --- 传输协议（通用，所有协议共享）--- */
         var oNet = sNodes.option(form.ListValue, 'network', _('传输协议 (network)'));
         oNet.modalonly = true;
-        oNet.depends('protocol', 'vless');
         oNet.value('raw', 'raw');
         oNet.value('tcp', 'tcp (兼容旧名)');
         oNet.value('ws', 'websocket');
@@ -273,10 +272,90 @@ return view.extend({
         oNet.value('xhttp', 'xhttp');
         oNet.description = _('选择底层传输协议，默认为 raw (TCP)。');
 
-        /* --- 安全协议（依赖协议 = vless）--- */
+        /* --- WebSocket 传输设置 --- */
+        var oWsPath = sNodes.option(form.Value, 'ws_path', _('WS 路径 (path)'));
+        oWsPath.modalonly = true;
+        oWsPath.depends('network', 'ws');
+        oWsPath.placeholder = '/';
+
+        var oWsHost = sNodes.option(form.Value, 'ws_host', _('WS Host'));
+        oWsHost.modalonly = true;
+        oWsHost.depends('network', 'ws');
+
+        /* --- gRPC 传输设置 --- */
+        var oGrpcSvc = sNodes.option(form.Value, 'grpc_serviceName', _('gRPC ServiceName'));
+        oGrpcSvc.modalonly = true;
+        oGrpcSvc.depends('network', 'grpc');
+
+        var oGrpcAuth = sNodes.option(form.Value, 'grpc_authority', _('gRPC Authority'));
+        oGrpcAuth.modalonly = true;
+        oGrpcAuth.depends('network', 'grpc');
+
+        var oGrpcMulti = sNodes.option(form.Flag, 'grpc_multiMode', _('gRPC MultiMode'));
+        oGrpcMulti.modalonly = true;
+        oGrpcMulti.depends('network', 'grpc');
+        oGrpcMulti.description = _('实验性选项，约 20% 性能提升，不保证跨版本兼容。');
+
+        /* --- mKCP 传输设置 --- */
+        var oKcpMtu = sNodes.option(form.Value, 'kcp_mtu', _('mKCP MTU'));
+        oKcpMtu.modalonly = true;
+        oKcpMtu.depends('network', 'mkcp');
+        oKcpMtu.datatype = 'range(576,1460)';
+        oKcpMtu.placeholder = '1350';
+
+        var oKcpTti = sNodes.option(form.Value, 'kcp_tti', _('mKCP TTI (ms)'));
+        oKcpTti.modalonly = true;
+        oKcpTti.depends('network', 'mkcp');
+        oKcpTti.datatype = 'range(10,100)';
+        oKcpTti.placeholder = '50';
+
+        var oKcpUp = sNodes.option(form.Value, 'kcp_uplinkCapacity', _('mKCP 上行带宽 (MB/s)'));
+        oKcpUp.modalonly = true;
+        oKcpUp.depends('network', 'mkcp');
+        oKcpUp.datatype = 'uinteger';
+        oKcpUp.placeholder = '5';
+
+        var oKcpDown = sNodes.option(form.Value, 'kcp_downlinkCapacity', _('mKCP 下行带宽 (MB/s)'));
+        oKcpDown.modalonly = true;
+        oKcpDown.depends('network', 'mkcp');
+        oKcpDown.datatype = 'uinteger';
+        oKcpDown.placeholder = '20';
+
+        var oKcpCong = sNodes.option(form.Flag, 'kcp_congestion', _('mKCP 拥塞控制'));
+        oKcpCong.modalonly = true;
+        oKcpCong.depends('network', 'mkcp');
+
+        /* --- HTTPUpgrade 传输设置 --- */
+        var oHuPath = sNodes.option(form.Value, 'hu_path', _('HTTPUpgrade 路径 (path)'));
+        oHuPath.modalonly = true;
+        oHuPath.depends('network', 'httpupgrade');
+        oHuPath.placeholder = '/';
+
+        var oHuHost = sNodes.option(form.Value, 'hu_host', _('HTTPUpgrade Host'));
+        oHuHost.modalonly = true;
+        oHuHost.depends('network', 'httpupgrade');
+
+        /* --- XHTTP 传输设置 --- */
+        var oXhPath = sNodes.option(form.Value, 'xh_path', _('XHTTP 路径 (path)'));
+        oXhPath.modalonly = true;
+        oXhPath.depends('network', 'xhttp');
+
+        var oXhHost = sNodes.option(form.Value, 'xh_host', _('XHTTP Host'));
+        oXhHost.modalonly = true;
+        oXhHost.depends('network', 'xhttp');
+
+        var oXhMode = sNodes.option(form.ListValue, 'xh_mode', _('XHTTP Mode'));
+        oXhMode.modalonly = true;
+        oXhMode.depends('network', 'xhttp');
+        oXhMode.value('', _('默认'));
+        oXhMode.value('auto', 'auto');
+        oXhMode.value('packet-up', 'packet-up');
+        oXhMode.value('stream-up', 'stream-up');
+        oXhMode.value('stream-one', 'stream-one');
+
+        /* --- 安全协议（通用，所有协议共享）--- */
         var oSec = sNodes.option(form.ListValue, 'security', _('安全 (security)'));
         oSec.modalonly = true;
-        oSec.depends('protocol', 'vless');
         oSec.value('none', 'none');
         oSec.value('tls', 'tls');
         oSec.value('reality', 'reality');
@@ -332,6 +411,15 @@ return view.extend({
         oAI.modalonly = true;
         oAI.depends('security', 'tls');
         oAI.description = _('允许不安全的 TLS 连接（跳过证书验证）。出于安全性考虑不建议启用，仅在服务端使用自签名证书时开启。');
+
+        /* --- 底层网络设置（通用）--- */
+        var oTcpCong = sNodes.option(form.ListValue, 'tcpcongestion', _('TCP 拥塞控制算法'));
+        oTcpCong.modalonly = true;
+        oTcpCong.value('', _('系统默认'));
+        oTcpCong.value('bbr', 'bbr');
+        oTcpCong.value('cubic', 'cubic');
+        oTcpCong.value('reno', 'reno');
+        oTcpCong.description = _('底层 TCP 拥塞控制算法，通常保持系统默认即可。');
 
         /* ====== 国内域名DNS ====== */
         var sDns = m.section(form.NamedSection, 'main', _('国内域名DNS'));
