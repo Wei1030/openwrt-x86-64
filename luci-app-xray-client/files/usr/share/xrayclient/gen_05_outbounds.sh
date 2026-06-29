@@ -3,10 +3,12 @@ CONF_DIR="/etc/xrayclient/conf.d"
 UCI_CONF="xrayclient"
 
 ACTIVE_NODE=$(uci -q get ${UCI_CONF}.main.active_node)
-[ -z "$ACTIVE_NODE" ] && ACTIVE_NODE="node1"
 
-# 只取 uci show 的第一行，即 section 声明行
-NODE_TYPE=$(uci -q show ${UCI_CONF}.${ACTIVE_NODE} | head -n 1 | cut -d'=' -f2 | tr -d "'")
+# 检查 active_node 是否存在且是 node 类型
+NODE_TYPE=""
+if [ -n "$ACTIVE_NODE" ]; then
+    NODE_TYPE=$(uci -q get ${UCI_CONF}.${ACTIVE_NODE}.protocol)
+fi
 
 gen_vless() {
     local node=$1
@@ -22,50 +24,81 @@ gen_vless() {
     local fp=$(uci -q get ${UCI_CONF}.${node}.fingerprint)
     local pwd=$(uci -q get ${UCI_CONF}.${node}.password)
     local sid=$(uci -q get ${UCI_CONF}.${node}.shortId)
-    local mld=$(uci -q get ${UCI_CONF}.${node}.mldsa65Verify)
-    local spx=$(uci -q get ${UCI_CONF}.${node}.spiderX)
-    local allow_insecure=$(uci -q get ${UCI_CONF}.${node}.allow_insecure)
+    local sp=$(uci -q get ${UCI_CONF}.${node}.spiderX)
+    local path=$(uci -q get ${UCI_CONF}.${node}.path)
+    local host=$(uci -q get ${UCI_CONF}.${node}.host)
+    local sni=$(uci -q get ${UCI_CONF}.${node}.sni)
 
+    # 默认值
     [ -z "$enc" ] && enc="none"
+    [ -z "$flow" ] && flow=""
     [ -z "$lvl" ] && lvl=0
-    [ -z "$sec" ] && sec="none"
     [ -z "$net" ] && net="raw"
+    [ -z "$sec" ] && sec="none"
 
-    # 构建 securitySettings JSON 片段
-    local sec_json=""
-    case "$sec" in
-        reality)
-            sec_json="\"realitySettings\": {
-                \"serverName\": \"${sn}\", \"fingerprint\": \"${fp}\",
-                \"password\": \"${pwd}\", \"shortId\": \"${sid}\",
-                \"mldsa65Verify\": \"${mld}\", \"spiderX\": \"${spx}\"
-            }"
+    # 构造 streamSettings
+    STREAM_JSON=""
+    case "$net" in
+        raw|tcp)
+            NET_OUTER='"tcpSettings": {}'
             ;;
-        tls)
-            local ai="false"
-            [ "$allow_insecure" = "1" ] && ai="true"
-            sec_json="\"tlsSettings\": {
-                \"serverName\": \"${sn}\", \"fingerprint\": \"${fp}\",
-                \"allowInsecure\": ${ai}
-            }"
+        ws)
+            WS_PATH="${path:-/}"
+            WS_HOST="${host:-$addr}"
+            NET_OUTER="{ \"wsSettings\": { \"path\": \"${WS_PATH}\", \"headers\": { \"Host\": \"${WS_HOST}\" } } }"
             ;;
-        none)
-            sec_json=""
+        grpc)
+            GRPC_SN="${sn:-}"
+            NET_OUTER="{ \"grpcSettings\": { \"serviceName\": \"${GRPC_SN}\" } }"
+            ;;
+        mkcp)
+            NET_OUTER='"kcpSettings": {}'
+            ;;
+        httpupgrade)
+            HU_PATH="${path:-/}"
+            HU_HOST="${host:-$addr}"
+            NET_OUTER="{ \"httpupgradeSettings\": { \"path\": \"${HU_PATH}\", \"host\": \"${HU_HOST}\" } }"
+            ;;
+        xhttp)
+            XH_PATH="${path:-/}"
+            XH_HOST="${host:-$addr}"
+            NET_OUTER="{ \"xhttpSettings\": { \"path\": \"${XH_PATH}\", \"host\": \"${XH_HOST}\" } }"
+            ;;
+        *)
+            NET_OUTER='"tcpSettings": {}'
             ;;
     esac
 
-    # 组装 streamSettings
-    local stream_json=""
-    if [ -n "$sec_json" ]; then
-        stream_json="\"streamSettings\": {
-            \"network\": \"${net}\", \"security\": \"${sec}\",
-            ${sec_json}
-        }"
-    else
-        stream_json="\"streamSettings\": {
-            \"network\": \"${net}\", \"security\": \"none\"
-        }"
-    fi
+    # 构造 security
+    SEC_JSON='"none"'
+    case "$sec" in
+        none)
+            SEC_JSON='"none"'
+            ;;
+        tls)
+            TLS_SN="${sn:-$sni}"
+            TLS_FP="${fp:-}"
+            if [ -n "$TLS_FP" ]; then
+                SEC_JSON="{ \"tls\": { \"serverName\": \"${TLS_SN}\", \"fingerprint\": \"${TLS_FP}\" } }"
+            else
+                SEC_JSON="{ \"tls\": { \"serverName\": \"${TLS_SN}\" } }"
+            fi
+            ;;
+        reality)
+            R_SN="${sn:-$sni}"
+            R_FP="${fp:-}"
+            R_PWD="${pwd:-}"
+            R_SID="${sid:-}"
+            R_SP="${sp:-}"
+            REALITY_INNER="{ \"serverName\": \"${R_SN}\", \"fingerprint\": \"${R_FP}\", \"publicKey\": \"${R_PWD}\", \"shortId\": \"${R_SID}\" }"
+            if [ -n "$R_SP" ]; then
+                REALITY_INNER=$(echo "$REALITY_INNER" | sed 's/}$/,"spiderX":"'"$R_SP"'"}/')
+            fi
+            SEC_JSON="{ \"reality\": ${REALITY_INNER} }"
+            ;;
+    esac
+
+    stream_json="\"streamSettings\": { \"network\": \"${net}\", ${NET_OUTER}, \"security\": ${SEC_JSON} }"
 
     cat << JSONEOF
 {
@@ -90,7 +123,11 @@ case "$NODE_TYPE" in
         ;;
     "")
         echo "{ \"error\": \"未配置代理节点\" }" > "$CONF_DIR/05_outbounds_tail.json"
-        echo "警告: 未配置代理节点 (active_node=${ACTIVE_NODE:-空})，请在 LuCI 页面添加节点后再启动服务。"
+        if [ -z "$ACTIVE_NODE" ]; then
+            echo "警告: 未配置代理节点 (active_node 为空)，请在 LuCI 页面选择节点后再启动服务。"
+        else
+            echo "警告: 活动节点 '${ACTIVE_NODE}' 不存在或未配置协议，请在 LuCI 页面重新选择节点。"
+        fi
         ;;
     *)
         echo "{ \"error\": \"未知协议类型 '$NODE_TYPE'\" }" > "$CONF_DIR/05_outbounds_tail.json"

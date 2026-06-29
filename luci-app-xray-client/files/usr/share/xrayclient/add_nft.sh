@@ -73,6 +73,7 @@ fi
 PROXY_SERVER_IP=""
 ACTIVE_NODE=$(uci -q get ${UCI_CONF}.main.active_node)
 if [ -n "$ACTIVE_NODE" ]; then
+    # 确认该 node 存在且有 address 字段
     PROXY_SERVER_IP=$(uci -q get ${UCI_CONF}.${ACTIVE_NODE}.address)
     if [ -n "$PROXY_SERVER_IP" ]; then
         if echo "$PROXY_SERVER_IP" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then

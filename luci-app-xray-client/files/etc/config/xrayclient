@@ -79,6 +79,7 @@ config remote_dns 'dns3'
         option address '8.8.4.4'
         option port '53'
 
-# 在 LuCI 页面的「代理节点」Tab 中添加节点
+# 在 LuCI 页面的「节点列表」Tab 中添加节点
+# 节点使用 config node 类型，内部 protocol 字段区分协议
 # 支持的协议类型: vless (后续将支持更多协议)
 

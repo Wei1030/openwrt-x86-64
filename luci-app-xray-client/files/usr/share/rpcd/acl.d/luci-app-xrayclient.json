@@ -21,6 +21,8 @@
                         "file": {
                                 "/etc/init.d/xrayclient": [ "exec" ],
                                 "/usr/share/xrayclient/update_data.sh": [ "exec" ],
+                                "/usr/share/xrayclient/remove_nft.sh": [ "exec" ],
+                                "/usr/share/xrayclient/remove_route.sh": [ "exec" ],
                                 "/var/log/xrayclient.log": [ "write" ]
                         },
                         "uci": [ "xrayclient" ]

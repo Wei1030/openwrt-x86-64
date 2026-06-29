@@ -20,6 +20,9 @@ start_service() {
     {
         echo "===== $(date '+%Y-%m-%d %H:%M:%S') 开始启动 Xray client ====="
 
+        # 检测国内域名 DNS (从系统 resolvfile 自动获取) — 尽早执行
+        sh "$XRAY_DIR/find_dns.sh"
+
         # 同步定时更新任务 (IP类 和 域名类 分别调度)
         mkdir -p /etc/crontabs
         touch /etc/crontabs/root
@@ -93,6 +96,14 @@ start_service() {
             return 0
         fi
 
+        # 检查活动节点对应的 section 是否存在
+        NODE_PROTOCOL=$(uci -q get ${UCI_CONF}.${ACTIVE_NODE}.protocol)
+        if [ -z "$NODE_PROTOCOL" ]; then
+            echo "活动节点 '${ACTIVE_NODE}' 不存在或未配置协议，跳过服务启动。"
+            echo "请在 LuCI 页面重新选择代理节点。"
+            return 0
+        fi
+
         XRAY_BIN="/usr/bin/xray"
         if [ ! -f "$XRAY_BIN" ]; then
             echo "错误: 找不到 Xray 二进制文件 $XRAY_BIN"
@@ -111,9 +122,6 @@ start_service() {
         # 防御性清理旧规则
         [ -f "$XRAY_DIR/remove_nft.sh" ] && sh "$XRAY_DIR/remove_nft.sh" > /dev/null 2>&1
         [ -f "$XRAY_DIR/remove_route.sh" ] && sh "$XRAY_DIR/remove_route.sh" > /dev/null 2>&1
-
-        # 检测国内域名 DNS (从系统 resolvfile 自动获取)
-        sh "$XRAY_DIR/find_dns.sh"
 
         # 生成 Xray 配置
         sh "$XRAY_DIR/gen_xray_config.sh"

@@ -67,7 +67,7 @@ return view.extend({
         this.running = running;
         var logContent = data[2] || '';
         var fileStats = data[3] || [];
-        var nodes = uci.sections(UCI_CONF, 'vless');
+        var nodes = uci.sections(UCI_CONF, 'node');
 
         /* 将文件 mtime 转为可读时间 */
         var fileMtimeMap = {};
@@ -86,11 +86,58 @@ return view.extend({
         /* ====== 概览 ====== */
         var sOverview = m.section(form.NamedSection, 'main', _('概览'));
 
+        /* 判断活动节点是否有效 (active_node 非空 && 对应 node 存在) */
+        var activeNodeName = uci.get(UCI_CONF, 'main', 'active_node') || '';
+        var activeNodeValid = false;
+        if (activeNodeName) {
+            var activeNodeSection = uci.get(UCI_CONF, activeNodeName);
+            activeNodeValid = !!(activeNodeSection && activeNodeSection.protocol);
+        }
+
         var oStat = sOverview.option(form.DummyValue, '_status', _('运行状态'));
         oStat.renderWidget = function () {
-            return E('span', {
-                style: 'font-weight:bold;color:' + (running ? '#46b450' : '#dc3232')
-            }, '\u25CF ' + (running ? _('运行中') : _('已停止')));
+            /* 判断状态: 运行中 / 已停止 / 启动失败 */
+            var statusText, statusColor;
+            var showCleanupBtn = false;
+            if (running) {
+                statusText = _('运行中');
+                statusColor = '#46b450';
+            } else if (activeNodeValid) {
+                /* 节点已选中且存在，但服务未运行 → 启动失败 */
+                statusText = _('启动失败');
+                statusColor = '#dc3232';
+                showCleanupBtn = true;
+            } else {
+                statusText = _('已停止');
+                statusColor = '#dc3232';
+            }
+
+            var elements = [E('span', {
+                style: 'font-weight:bold;color:' + statusColor
+            }, '\u25CF ' + statusText)];
+
+            if (showCleanupBtn) {
+                elements.push(E('button', {
+                    'type': 'button',
+                    'class': 'cbi-button cbi-button-neutral',
+                    'style': 'margin-left:10px;',
+                    'click': function (ev) {
+                        ui.showModal(_('清理路由规则'), [
+                            E('p', { 'class': 'spinning' }, _('正在清理 nftables 和路由规则...'))
+                        ]);
+                        Promise.all([
+                            fs.exec('/usr/share/xrayclient/remove_nft.sh').catch(function () {}),
+                            fs.exec('/usr/share/xrayclient/remove_route.sh').catch(function () {})
+                        ]).then(function () {
+                            ui.hideModal();
+                            ui.addNotification(null, E('p', _('路由及 nftables 规则已清理。')));
+                            window.setTimeout(function () { window.location.reload(); }, 2000);
+                        });
+                    }
+                }, _('清除路由规则')));
+            }
+
+            return E('div', { style: 'display:flex;align-items:center;gap:8px;' }, elements);
         };
 
         var oActive = sOverview.option(form.ListValue, 'active_node', _('当前代理节点'));
@@ -164,7 +211,7 @@ return view.extend({
         };
 
         /* ====== 节点列表 ====== */
-        var sNodes = m.section(form.GridSection, 'vless', _('节点列表'));
+        var sNodes = m.section(form.GridSection, 'node', _('节点列表'));
         sNodes.addremove = true;
         sNodes.nodescriptions = true;
         sNodes.anonymous = true;
@@ -182,33 +229,26 @@ return view.extend({
         /* ====== 模态框字段 ====== */
 
         /* --- 协议选择 --- */
-        var oProto = sNodes.option(form.ListValue, '_proto', _('协议'));
+        var oProto = sNodes.option(form.ListValue, 'protocol', _('协议'));
         oProto.modalonly = true;
         oProto.value('', _('-- 请选择 --'));
         oProto.value('vless', 'VLESS');
         oProto.description = _('选择代理协议类型。目前仅支持 VLESS，后续将支持更多协议。');
-        oProto.cfgvalue = function (section_id) {
-            var section = uci.get(UCI_CONF, section_id);
-            return (section && section['.type']) || '';
-        };
-        oProto.write = function (section_id, formvalue) {
-            uci.set(UCI_CONF, section_id, formvalue);
-        };
 
         /* --- 基本信息（依赖协议 = vless）--- */
         var oId = sNodes.option(form.Value, 'id', _('用户 ID (UUID)'));
         oId.modalonly = true;
-        oId.depends('_proto', 'vless');
+        oId.depends('protocol', 'vless');
 
         var oEnc = sNodes.option(form.Value, 'encryption', _('加密方式'));
         oEnc.modalonly = true;
-        oEnc.depends('_proto', 'vless');
+        oEnc.depends('protocol', 'vless');
         oEnc.placeholder = 'none';
         oEnc.description = _('默认为 none，通常无需修改。');
 
         var oFlow = sNodes.option(form.ListValue, 'flow', _('Flow (流控)'));
         oFlow.modalonly = true;
-        oFlow.depends('_proto', 'vless');
+        oFlow.depends('protocol', 'vless');
         oFlow.value('', _('不使用'));
         oFlow.value('xtls-rprx-vision', 'xtls-rprx-vision');
         oFlow.value('xtls-rprx-vision-udp443', 'xtls-rprx-vision-udp443');
@@ -216,14 +256,14 @@ return view.extend({
 
         var oLvl = sNodes.option(form.Value, 'level', _('用户等级'));
         oLvl.modalonly = true;
-        oLvl.depends('_proto', 'vless');
+        oLvl.depends('protocol', 'vless');
         oLvl.datatype = 'uinteger';
         oLvl.placeholder = '0';
 
         /* --- 传输协议（依赖协议 = vless）--- */
         var oNet = sNodes.option(form.ListValue, 'network', _('传输协议 (network)'));
         oNet.modalonly = true;
-        oNet.depends('_proto', 'vless');
+        oNet.depends('protocol', 'vless');
         oNet.value('raw', 'raw');
         oNet.value('tcp', 'tcp (兼容旧名)');
         oNet.value('ws', 'websocket');
@@ -236,7 +276,7 @@ return view.extend({
         /* --- 安全协议（依赖协议 = vless）--- */
         var oSec = sNodes.option(form.ListValue, 'security', _('安全 (security)'));
         oSec.modalonly = true;
-        oSec.depends('_proto', 'vless');
+        oSec.depends('protocol', 'vless');
         oSec.value('none', 'none');
         oSec.value('tls', 'tls');
         oSec.value('reality', 'reality');
@@ -676,13 +716,19 @@ return view.extend({
         }).then(function () {
             /* 根据服务原状态 + 用户选择，决定 start/stop/restart */
             var activeNode = uci.get(UCI_CONF, 'main', 'active_node') || '';
+            /* 两层判断: active_node 非空 && 对应 node 存在 */
+            var nodeExists = false;
+            if (activeNode) {
+                var nodeSection = uci.get(UCI_CONF, activeNode);
+                nodeExists = !!(nodeSection && nodeSection.protocol);
+            }
             var action = null;
 
-            if (activeNode) {
-                /* 用户选择了某个节点 */
+            if (nodeExists) {
+                /* 用户选择了有效节点 */
                 action = wasRunning ? 'restart' : 'start';
             } else if (wasRunning) {
-                /* 用户选择了"停用"，服务原来在运行 */
+                /* 用户选择了"停用"或节点已删除，服务原来在运行 */
                 action = 'stop';
             }
             /* 服务未运行且选择停用 → 无需操作 */
