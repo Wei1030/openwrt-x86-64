@@ -222,8 +222,8 @@ return view.extend({
         };
 
         /* 表格列: 别名 + 服务器地址 + 端口 */
-		var dummyProto = sNodes.option(form.DummyValue, 'protocol', _('协议'));
-		dummyProto.modalonly = false;
+        var dummyProto = sNodes.option(form.DummyValue, 'protocol', _('协议'));
+        dummyProto.modalonly = false;
         sNodes.option(form.Value, 'alias', _('别名'));
         sNodes.option(form.Value, 'address', _('服务器地址')).datatype = 'host';
         sNodes.option(form.Value, 'port', _('端口')).datatype = 'port';
@@ -239,10 +239,10 @@ return view.extend({
         oProto.value('vmess', 'VMess');
         oProto.description = _('选择代理协议类型。');
 
-        /* --- 基本信息（依赖协议 = vless）--- */
+        /* --- 基本信息（VLESS + VMess 共用）--- */
         var oId = sNodes.option(form.Value, 'id', _('用户 ID (UUID)'));
         oId.modalonly = true;
-        oId.depends('protocol', 'vless');
+        oId.retain = true;
 
         var oEnc = sNodes.option(form.Value, 'encryption', _('VLESS 加密 (encryption)'));
         oEnc.modalonly = true;
@@ -260,9 +260,9 @@ return view.extend({
 
         var oLvl = sNodes.option(form.Value, 'level', _('用户等级'));
         oLvl.modalonly = true;
-        oLvl.depends('protocol', 'vless');
         oLvl.datatype = 'uinteger';
         oLvl.placeholder = '0';
+        oLvl.retain = true;
 
         /* --- 传输协议（通用，所有协议共享）--- */
         var oNet = sNodes.option(form.ListValue, 'network', _('传输协议 (network)'));
@@ -428,17 +428,7 @@ return view.extend({
         oSsPwd.depends('protocol', 'shadowsocks');
         oSsPwd.password = true;
 
-        var oSsLvl = sNodes.option(form.Value, 'level', _('用户等级 (level)'));
-        oSsLvl.modalonly = true;
-        oSsLvl.depends('protocol', 'shadowsocks');
-        oSsLvl.datatype = 'uinteger';
-        oSsLvl.placeholder = '0';
-
         /* --- 基本信息（依赖协议 = vmess）--- */
-        var oVmId = sNodes.option(form.Value, 'id', _('用户 ID (UUID)'));
-        oVmId.modalonly = true;
-        oVmId.depends('protocol', 'vmess');
-
         var oVmSec = sNodes.option(form.ListValue, 'vmess_security', _('VMess 加密 (security)'));
         oVmSec.modalonly = true;
         oVmSec.depends('protocol', 'vmess');
@@ -452,12 +442,6 @@ return view.extend({
         oVmExp.modalonly = true;
         oVmExp.depends('protocol', 'vmess');
         oVmExp.description = _('可选值: AuthenticatedLength。NoTerminationSignal 已默认启用无需填写。');
-
-        var oVmLvl = sNodes.option(form.Value, 'level', _('用户等级 (level)'));
-        oVmLvl.modalonly = true;
-        oVmLvl.depends('protocol', 'vmess');
-        oVmLvl.datatype = 'uinteger';
-        oVmLvl.placeholder = '0';
 
         /* --- TLS 专属字段 --- */
         var oAI = sNodes.option(form.Flag, 'allow_insecure', _('允许不安全连接'));
