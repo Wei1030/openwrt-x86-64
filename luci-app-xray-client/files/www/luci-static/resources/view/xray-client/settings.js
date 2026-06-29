@@ -432,6 +432,31 @@ return view.extend({
         oSsLvl.datatype = 'uinteger';
         oSsLvl.placeholder = '0';
 
+        /* --- 基本信息（依赖协议 = vmess）--- */
+        var oVmId = sNodes.option(form.Value, 'id', _('用户 ID (UUID)'));
+        oVmId.modalonly = true;
+        oVmId.depends('protocol', 'vmess');
+
+        var oVmSec = sNodes.option(form.ListValue, 'vmess_security', _('VMess 加密 (security)'));
+        oVmSec.modalonly = true;
+        oVmSec.depends('protocol', 'vmess');
+        oVmSec.value('auto', 'auto (默认)');
+        oVmSec.value('aes-128-gcm', 'aes-128-gcm');
+        oVmSec.value('chacha20-poly1305', 'chacha20-poly1305');
+        oVmSec.value('none', 'none');
+        oVmSec.value('zero', 'zero');
+
+        var oVmExp = sNodes.option(form.Value, 'experiments', _('实验性功能 (experiments)'));
+        oVmExp.modalonly = true;
+        oVmExp.depends('protocol', 'vmess');
+        oVmExp.description = _('可选值: AuthenticatedLength。NoTerminationSignal 已默认启用无需填写。');
+
+        var oVmLvl = sNodes.option(form.Value, 'level', _('用户等级 (level)'));
+        oVmLvl.modalonly = true;
+        oVmLvl.depends('protocol', 'vmess');
+        oVmLvl.datatype = 'uinteger';
+        oVmLvl.placeholder = '0';
+
         /* --- TLS 专属字段 --- */
         var oAI = sNodes.option(form.Flag, 'allow_insecure', _('允许不安全连接'));
         oAI.modalonly = true;
