@@ -222,6 +222,8 @@ return view.extend({
         };
 
         /* 表格列: 别名 + 服务器地址 + 端口 */
+		var dummyProto = sNodes.option(form.DummyValue, 'protocol', _('协议'));
+		dummyProto.modalonly = false;
         sNodes.option(form.Value, 'alias', _('别名'));
         sNodes.option(form.Value, 'address', _('服务器地址')).datatype = 'host';
         sNodes.option(form.Value, 'port', _('端口')).datatype = 'port';
