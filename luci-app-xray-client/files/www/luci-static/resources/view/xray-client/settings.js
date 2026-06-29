@@ -96,8 +96,8 @@ return view.extend({
         var oActive = sOverview.option(form.ListValue, 'active_node', _('当前代理节点'));
         oActive.value('', _('停用'));
         nodes.forEach(function (s) {
-            oActive.value(s['.name'],
-                s['.name'] + ' (' + (s.address || _('未设置')) + ':' + (s.port || '') + ')');
+            var label = s.alias || ((s.address || _('未设置')) + ':' + (s.port || ''));
+            oActive.value(s['.name'], label);
         });
         oActive.description = _('选择当前使用的代理节点。选择"停用"将停止代理服务；选择节点则通过该节点转发流量。');
 
@@ -167,21 +167,15 @@ return view.extend({
         var sNodes = m.section(form.GridSection, 'vless', _('节点列表'));
         sNodes.addremove = true;
         sNodes.nodescriptions = true;
+        sNodes.anonymous = true;
         sNodes.addbtntitle = _('+ 添加节点');
         sNodes.modaltitle = function (section_id) {
-            return _('节点详情') + ' \u2014 ' + section_id;
-        };
-                /* 添加节点时名称输入框的 placeholder 提示 */
-        sNodes.renderSectionAdd = function (extra_class) {
-            var el = form.GridSection.prototype.renderSectionAdd.apply(this, [extra_class]);
-            var input = el.querySelector('input[type="text"]');
-            if (input) {
-                input.placeholder = _('节点名称');
-            }
-            return el;
+            var alias = uci.get(UCI_CONF, section_id, 'alias');
+            return _('节点详情') + ' \u2014 ' + (alias || section_id);
         };
 
-        /* 表格列 */
+        /* 表格列: 别名 + 服务器地址 + 端口 */
+        sNodes.option(form.Value, 'alias', _('别名'));
         sNodes.option(form.Value, 'address', _('服务器地址')).datatype = 'host';
         sNodes.option(form.Value, 'port', _('端口')).datatype = 'port';
 
@@ -389,7 +383,6 @@ return view.extend({
 
         /* ====== 访问控制 ====== */
         var sAccess = m.section(form.NamedSection, 'main', _('访问控制'));
-        sAccess.description = '<div style="font-size:14px;font-weight:600;color:#555;margin-bottom:24px;">' + _('黑名单中的域名和 IP 将强制经由代理转发。白名单中的域名和 IP 将直连，不经过代理。') + '</div>';
 
         /* --- 监控接口 --- */
         var oIface = sAccess.option(widgets.NetworkSelect, 'nft_lan_iface', _('监控接口'));
