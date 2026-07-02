@@ -9,7 +9,7 @@ BL_IPS=$(uci -q show ${UCI_CONF}.main.blacklist_ip | sed "s/.*=//; s/'//g" | awk
 
 WL_RULE=""
 if [ -n "$WL_DOMAINS" ]; then
-    WL_RULE="            { \"domain\": [ $WL_DOMAINS ], \"outboundTag\": \"direct\" },"
+    WL_RULE="            { \"domain\": [ $WL_DOMAINS ], \"outboundTag\": \"local_socks_server\" },"
 fi
 
 # 读取使用 FakeIP 的额外域名 (插入到 geosite:google 之后)
