@@ -3,11 +3,10 @@
 # 获取脚本绝对路径
 SCRIPT_DIR=$(cd "$(dirname "$0")"; pwd)
 CONF_DIR="/etc/xrayclient/conf.d"
-DIRECT_CONF_DIR="/etc/xrayclient/http_proxy"
+SOCKS_PROXY_DIR="/etc/xrayclient/socks_proxy"
 UCI_CONF="xrayclient"
 
 mkdir -p "$CONF_DIR"
-mkdir -p "$DIRECT_CONF_DIR"
 
 # 读取白名单直连代理端口
 LOCAL_SOCKS_PORT=$(uci -q get ${UCI_CONF}.main.local_socks_port)
@@ -43,10 +42,13 @@ sh "$SCRIPT_DIR/gen_03_fakedns.sh"
 sh "$SCRIPT_DIR/gen_04_routing.sh"
 sh "$SCRIPT_DIR/gen_05_outbounds.sh"
 
-# 3. 生成白名单直连代理实例配置 (第二 Xray 实例)
-echo "正在生成白名单直连代理配置到 $DIRECT_CONF_DIR ..."
+# 3. 生成白名单直连代理实例配置 (第二 Xray 实例，仅在有白名单域名时生成)
+WL_DOMAINS_RAW=$(uci -q show ${UCI_CONF}.main.whitelist_domain | sed "s/.*=//; s/'//g")
+if [ -n "$WL_DOMAINS_RAW" ]; then
+    mkdir -p "$SOCKS_PROXY_DIR"
+    echo "正在生成白名单直连代理配置到 $SOCKS_PROXY_DIR ..."
 
-cat << JSONEOF > "$DIRECT_CONF_DIR/config.json"
+    cat << JSONEOF > "$SOCKS_PROXY_DIR/config.json"
 {
     "inbounds": [
         {
@@ -79,6 +81,10 @@ cat << JSONEOF > "$DIRECT_CONF_DIR/config.json"
     }
 }
 JSONEOF
+else
+    echo "无白名单域名，跳过生成第二实例配置。"
+    rm -rf "$SOCKS_PROXY_DIR"
+fi
 
 echo "=================================="
 echo "Xray 配置文件生成完毕！"

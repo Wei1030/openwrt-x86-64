@@ -560,7 +560,7 @@ return view.extend({
         oBld.description = _('匹配到的域名将强制经由代理转发。支持 geosite:、domain:、full: 等语法，详见 Xray 官方文档。');
 
         var oBli = sAccess.option(form.DynamicList, 'blacklist_ip', _('黑名单 IP'));
-        oBli.description = _('匹配到的 IP 地址将强制经由代理转发。每行一条规则，支持 IPv4/IPv6 地址或 CIDR 段。');
+        oBli.description = _('匹配到的 IP 地址将强制经由代理转发。支持 IPv4/IPv6 地址或 CIDR 段。');
 
         var oWld = sAccess.option(form.DynamicList, 'whitelist_domain', _('白名单域名'));
         oWld.description = _('匹配到的域名将直连，不经过代理。支持 geosite:、domain:、full: 等语法，详见 Xray 官方文档。');
@@ -741,7 +741,7 @@ return view.extend({
 
         var oSP = sLog.option(form.Value, 'local_socks_port', _('白名单直连代理端口'));
         oSP.datatype = 'port';
-        oSP.description = _('白名单域名经 SOCKS 转发至第二 Xray 实例的监听端口，由该实例独立解析 DNS 并直连。');
+        oSP.description = _('白名单域名经 SOCKS 转发至第二 Xray 实例的监听端口，由该实例使用国内域名DNS解析并直连。');
 
         var oFwmark = sLog.option(form.Value, 'fwmark', _('防火墙标记 (fwmark)'));
         oFwmark.description = _('用于标记需要代理的流量，需确保不与系统中其他标记冲突。');
